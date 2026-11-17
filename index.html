@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>声の記録</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Serif+JP:wght@500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#17171B;--sub:#66666C;--line:#DCDBD6;--shu:#D3381C;--shu-dim:#A82A14;--ground:#FBFBF9;--layer:#F0EFEA;--prev:#8C8C92;--band:#C9C8C2;--warn:#FFF1CC;--warn-ink:#5A4200;--r:2px}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;background:#E9E8E3}
+body{margin:0 auto;max-width:480px;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;background:var(--ground);color:var(--ink);font-family:"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans",sans-serif;font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased}
+::selection{background:var(--ink);color:#fff}
+:focus-visible{outline:3px solid var(--shu);outline-offset:2px}
+h1,h2,h3,p{margin:0}
+h2,h3{text-wrap:balance}p{text-wrap:pretty}
+.num{font-family:Inter,"Noto Sans JP","Noto Sans CJK JP",sans-serif;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit}
+
+.top{display:flex;justify-content:space-between;align-items:baseline;padding:14px 20px 10px}
+.top h1{font-size:15px;font-weight:700;letter-spacing:.04em}
+.top span{font-size:13px;color:var(--sub)}
+.steps{display:flex;gap:22px;padding:0 20px;border-bottom:1px solid var(--line)}
+.steps button{appearance:none;border:0;background:none;padding:10px 0 11px;min-height:44px;font-size:14px;font-weight:500;color:var(--sub);cursor:pointer;display:flex;align-items:center;gap:5px}
+.steps button[aria-selected=true]{color:var(--ink);font-weight:700;box-shadow:inset 0 -3px 0 var(--shu)}
+.steps svg{width:12px;height:12px;color:var(--shu)}
+main{flex:1}
+.pad{padding:22px 20px 28px}
+h2{font-size:20px;font-weight:700;line-height:1.45;margin-bottom:8px}
+h3{font-size:15px;font-weight:700;line-height:1.4}
+.sub{color:var(--sub);font-size:13px;line-height:1.7}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.btn,.filebtn{appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:10px 18px;border:1.5px solid var(--ink);border-radius:var(--r);background:var(--ink);color:#fff;font-size:14px;font-weight:700;line-height:1.4;cursor:pointer;text-align:center;transition:background-color .15s ease-out,color .15s ease-out}
+.btn:hover,.filebtn:hover{background:#34343A}
+.btn.sec,.filebtn.sec{background:transparent;color:var(--ink)}
+.btn.sec:hover,.filebtn.sec:hover{background:var(--layer)}
+.btn.stop{background:var(--shu);border-color:var(--shu)}
+.btn.stop:hover{background:var(--shu-dim);border-color:var(--shu-dim)}
+.btn.text{border-color:transparent;background:none;color:var(--ink);font-weight:500;text-decoration:underline;text-underline-offset:4px;padding-left:2px;padding-right:2px}
+.btn.wide{width:100%}
+.filebtn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.filebtn:focus-within{outline:3px solid var(--shu);outline-offset:2px}
+.timer{font-size:64px;font-weight:600;line-height:1;letter-spacing:-.02em;margin:22px 0 4px}
+.msg{margin-top:14px;padding:10px 12px;border-radius:var(--r);background:var(--warn);color:var(--warn-ink);font-size:14px;line-height:1.7}
+.busy{margin-top:16px;color:var(--sub)}
+.live{display:flex;align-items:center;gap:10px;font-weight:700;flex:1}
+.live i{width:12px;height:12px;border-radius:50%;background:var(--shu)}
+
+/* 読む文と、声の高さの線 */
+.fig{padding:16px 20px 16px;background:var(--layer);border-bottom:1px solid var(--line)}
+.fig.plain{border:1px solid var(--line);margin:14px 0 12px;padding:6px 16px 14px}
+.fighead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:2px}
+.legend{font-size:12px;font-weight:500;color:var(--sub);display:flex;gap:12px;white-space:nowrap}
+.legend i{display:inline-block;width:18px;border-top:2.5px solid var(--shu);vertical-align:middle;margin-right:5px}
+.legend i.p{border-top:2px dashed var(--prev)}
+.ln{position:relative;padding-top:30px;font-family:"Noto Serif JP","Noto Serif CJK JP",serif;font-weight:500;letter-spacing:.04em;line-height:1.5;white-space:nowrap}
+.fig.plain .ln{padding-top:10px}
+.ln svg{position:absolute;left:0;top:0;width:100%;height:32px;overflow:visible}
+.chart svg{display:block;width:100%;height:auto;margin-top:8px}
+.seg{display:flex;margin:14px 20px 0;border:1.5px solid var(--ink);border-radius:var(--r)}
+.seg button{flex:1;appearance:none;border:0;background:none;min-height:40px;font-size:13px;font-weight:700;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--ink);color:#fff}
+.play{display:flex;gap:8px;padding:12px 20px}
+.play .btn{flex:1;padding:8px 8px;min-width:0}
+.rows{padding:0 20px}
+.key{display:flex;flex-wrap:wrap;gap:4px 14px;padding:0 0 10px;font-size:12px;color:var(--sub)}
+.key span{display:inline-flex;align-items:center;gap:6px}
+.key .kb{width:16px;height:8px;background:var(--band)}.key .kt{width:2px;height:14px;background:var(--prev)}.key .kd{width:10px;height:10px;border-radius:50%;background:var(--shu)}
+.r{display:grid;grid-template-columns:104px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:60px;padding:6px 0;border-top:1px solid var(--line)}
+.r h3{font-size:14px}
+.r h3 small{display:block;font-size:11.5px;font-weight:500;color:var(--sub);line-height:1.5}
+.r .v{text-align:right;font-size:24px;font-weight:600;line-height:1;letter-spacing:-.01em;min-width:84px;white-space:nowrap}
+.r .v small{font-size:11.5px;font-weight:500;color:var(--sub);margin-left:2px;letter-spacing:0;font-family:"Noto Sans JP","Noto Sans CJK JP",sans-serif}
+.rg{position:relative;height:20px}
+.rg:before{content:"";position:absolute;left:0;right:0;top:9px;height:2px;background:var(--line)}
+.rg b{position:absolute;top:5px;height:10px;background:var(--band)}
+.rg u{position:absolute;top:2px;width:2px;height:16px;margin-left:-1px;background:var(--prev)}
+.rg s{position:absolute;top:4px;width:12px;height:12px;margin-left:-6px;border-radius:50%;background:var(--shu)}
+.tr svg{display:block;width:100%;height:36px;overflow:visible}
+.after{padding:6px 20px 28px}
+details{border-top:1px solid var(--line)}
+summary{cursor:pointer;min-height:48px;display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;list-style:none;text-decoration:underline;text-underline-offset:4px}
+summary::-webkit-details-marker{display:none}
+summary svg{width:12px;height:12px;transition:transform .15s ease-out}
+details[open] summary svg{transform:rotate(90deg)}
+dl{margin:0 0 8px}dt{font-weight:700;font-size:14px}dd{margin:0 0 10px;color:var(--sub);font-size:13px;line-height:1.7}
+.done{padding:14px 0 0;font-size:14px}
+.day{padding:16px 0;border-top:1px solid var(--line)}
+.day h3{margin-bottom:10px}
+.day .row{margin-top:0}
+.day .btn{min-height:44px;padding:8px 14px;font-size:13px}
+.day .btn.text{padding-left:0;padding-right:0}
+.confirm{margin-top:10px;font-size:14px}
+.secthead{display:flex;justify-content:space-between;align-items:baseline;padding:22px 20px 10px}
+.secthead h2{margin:0}
+
+.nav{position:sticky;bottom:0;display:flex;height:64px;background:var(--ink);padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;appearance:none;border:0;background:none;color:#A9A9AE;font-size:12px;font-weight:500;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
+.nav button[aria-current=page]{color:#fff;font-weight:700}
+.nav button:focus-visible{outline-color:#fff;outline-offset:-4px}
+.nav svg{width:22px;height:22px}
+@media (max-width:359px){.r{grid-template-columns:92px minmax(0,1fr) auto;gap:8px}.r .v{font-size:21px;min-width:74px}.steps{gap:16px}}
+</style>
+</head>
+<body>
+<header class="top"><h1>声の記録</h1><span id="today-label"></span></header>
+
+<nav class="steps" id="steps" role="tablist" aria-label="今日の記録の手順">
+  <button role="tab" data-step="prep" aria-selected="true">準備</button>
+  <button role="tab" data-step="read" aria-selected="false">読む</button>
+  <button role="tab" data-step="talk" aria-selected="false">話す</button>
+  <button role="tab" data-step="result" aria-selected="false">結果</button>
+</nav>
+
+<main>
+<div id="view-today">
+  <section class="pad" data-panel="prep">
+    <h2>準備（1分）</h2>
+    <p>口を軽く閉じて「んー」と声を出します。鼻の付け根に響きを感じる強さで続けてください。ストローをくわえて「うー」と声を出す方法でも構いません。</p>
+    <div class="timer num" id="timer" aria-live="off">1:00</div>
+    <p class="sub" id="timer-note" role="status"></p>
+    <div class="row">
+      <button class="btn" id="timer-btn">1分のタイマーを始める</button>
+      <button class="btn sec" id="prep-next">準備を省いて、読む録音に進む</button>
+    </div>
+  </section>
+
+  <section class="pad" data-panel="read" data-kind="read" hidden>
+    <h2>文を読んで録音する</h2>
+    <p>次の文を、人に話すときの声で読みます。</p>
+    <div class="fig plain" id="passage"></div>
+    <p class="sub">毎回同じ部屋で、口から20cmほど離して録ると、前回の数値と比べやすくなります。</p>
+    <div class="rec"></div>
+  </section>
+
+  <section class="pad" data-panel="talk" data-kind="talk" hidden>
+    <h2>今日あったことを30秒話して録音する</h2>
+    <p>普段話すときの声の数値を見るための録音です。</p>
+    <div class="rec"></div>
+    <div class="row"><button class="btn text" id="talk-skip">話す録音を省いて、結果を見る</button></div>
+  </section>
+
+  <section data-panel="result" id="result" hidden></section>
+</div>
+
+<div id="view-log" hidden></div>
+</main>
+
+<nav class="nav" aria-label="画面の切り替え">
+  <button id="nav-today" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg>今日</button>
+  <button id="nav-log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l4-5 3 3 4-6"/></svg>記録</button>
+</nav>
+
+<template id="rec-tpl">
+  <p class="sub how" hidden style="margin-top:14px">このページではマイクを使えません。スマホの録音アプリで録音してから、下のボタンで音声を選びます。</p>
+  <div class="row ctl">
+    <button class="btn start">録音を始める</button>
+    <label class="filebtn sec"><input type="file" accept="audio/*,video/mp4,.m4a,.mp3,.wav,.webm,.ogg,.aac">録音済みの音声を選ぶ</label>
+  </div>
+  <div class="row live-row" hidden>
+    <span class="live"><i></i><span class="clock num">録音中 0:00</span></span>
+    <button class="btn stop">録音を終える</button>
+  </div>
+  <p class="busy" hidden aria-live="polite">数値を計算しています。</p>
+  <p class="msg" hidden role="status"></p>
+</template>
+
+<script>
+// 声の解析。ブラウザとNodeの両方で動く純粋な関数だけを置く。
+// 計算の出どころ:
+//  CPPS  … Hillenbrand ら(1994, 1996) の定義。設定は Praat の手順書に寄せた
+//          (10kHzに落とす / 傾向線は1〜50ms / ピーク探索は60〜330Hz / 時間20ms・ケフレンシー0.5msで平滑)。
+//          傾向線は通常の最小二乗で、Praat の robust 法ではない。数値は Praat と一致しない。
+//  高さ  … 正規化自己相関。
+(function (root) {
+  'use strict';
+
+  var FS = 10000;          // 解析用の標本化周波数
+  var HOP = 0.004;         // CPPS のフレーム間隔 (秒)
+  var NFFT = 1024;
+
+  // ---- 基本の道具 ----
+  function fft(re, im) {
+    var n = re.length, i, j, k, m;
+    for (i = 1, j = 0; i < n; i++) {
+      var bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { var t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (m = 2; m <= n; m <<= 1) {
+      var ang = -2 * Math.PI / m, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (i = 0; i < n; i += m) {
+        var cr = 1, ci = 0;
+        for (k = 0; k < m / 2; k++) {
+          var a = i + k, b = a + m / 2;
+          var xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+          var ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
+        }
+      }
+    }
+  }
+
+  // 低域通過 (窓関数法) のあと間引いて FS に落とす
+  function resample(x, fsIn) {
+    if (fsIn === FS) return Float32Array.from(x);
+    var ratio = fsIn / FS;
+    var cutoff = Math.min(0.5, 0.5 / ratio) * 0.92;   // 入力の標本化周波数に対する比
+    var half = 32, taps = new Float64Array(2 * half + 1), sum = 0, i;
+    for (i = -half; i <= half; i++) {
+      var s = i === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * i) / (Math.PI * i);
+      var w = 0.5 + 0.5 * Math.cos(Math.PI * i / (half + 1));
+      taps[i + half] = s * w; sum += s * w;
+    }
+    for (i = 0; i < taps.length; i++) taps[i] /= sum;
+    var n = Math.floor(x.length / ratio), y = new Float32Array(n);
+    for (var k = 0; k < n; k++) {
+      var pos = k * ratio, i0 = Math.floor(pos), frac = pos - i0, acc0 = 0, acc1 = 0;
+      for (i = -half; i <= half; i++) {
+        var a = i0 + i, b = a + 1;
+        if (a >= 0 && a < x.length) acc0 += x[a] * taps[i + half];
+        if (b >= 0 && b < x.length) acc1 += x[b] * taps[i + half];
+      }
+      y[k] = acc0 * (1 - frac) + acc1 * frac;
+    }
+    return y;
+  }
+
+  function percentile(arr, p) {
+    if (!arr.length) return NaN;
+    var s = Array.from(arr).sort(function (a, b) { return a - b; });
+    var idx = (s.length - 1) * p, lo = Math.floor(idx), hi = Math.ceil(idx);
+    return s[lo] + (s[hi] - s[lo]) * (idx - lo);
+  }
+  function mean(arr) { var s = 0; for (var i = 0; i < arr.length; i++) s += arr[i]; return arr.length ? s / arr.length : NaN; }
+
+  // ---- 音量の時間変化 (10ms刻み, dB) ----
+  function levelTrack(x) {
+    var hop = Math.round(FS * 0.01), win = Math.round(FS * 0.03), n = Math.max(0, Math.floor((x.length - win) / hop) + 1);
+    var out = new Float32Array(n);
+    for (var f = 0; f < n; f++) {
+      var s = 0, st = f * hop;
+      for (var i = 0; i < win; i++) s += x[st + i] * x[st + i];
+      out[f] = 10 * Math.log10(s / win + 1e-12);
+    }
+    return out;
+  }
+
+  // ---- 声の高さ (10ms刻み, Hz。無声は0) ----
+  function pitchTrack(x, level, speechThresh) {
+    var hop = Math.round(FS * 0.01), win = Math.round(FS * 0.04);
+    var minLag = Math.floor(FS / 500), maxLag = Math.ceil(FS / 70);
+    var n = Math.max(0, Math.floor((x.length - win - maxLag) / hop) + 1), f0 = new Float32Array(Math.max(n, 0));
+    for (var f = 0; f < n; f++) {
+      if (level[f] < speechThresh) continue;
+      var st = f * hop, e0 = 0, i;
+      for (i = 0; i < win; i++) e0 += x[st + i] * x[st + i];
+      if (e0 <= 0) continue;
+      var best = 0, bestLag = 0, prev = 1, cur, vals = new Float32Array(maxLag + 2);
+      for (var lag = minLag - 1; lag <= maxLag + 1; lag++) {
+        var c = 0, e1 = 0;
+        for (i = 0; i < win; i++) { c += x[st + i] * x[st + i + lag]; e1 += x[st + i + lag] * x[st + i + lag]; }
+        vals[lag] = c / Math.sqrt(e0 * e1 + 1e-12);
+      }
+      // 山のうち、最大値の 0.9 倍以上で最も短い周期を採る (1オクターブ下の取り違えを避ける)
+      var gmax = 0;
+      for (lag = minLag; lag <= maxLag; lag++) if (vals[lag] > gmax) gmax = vals[lag];
+      if (gmax < 0.5) continue;
+      for (lag = minLag; lag <= maxLag; lag++) {
+        if (vals[lag] >= vals[lag - 1] && vals[lag] > vals[lag + 1] && vals[lag] >= 0.9 * gmax) { bestLag = lag; best = vals[lag]; break; }
+      }
+      if (!bestLag) continue;
+      var a = vals[bestLag - 1], b = vals[bestLag], cc = vals[bestLag + 1], d = a - 2 * b + cc;
+      var shift = d !== 0 ? 0.5 * (a - cc) / d : 0;
+      f0[f] = FS / (bestLag + shift);
+    }
+    // 5点の中央値で外れ値を除く
+    var out = new Float32Array(n);
+    for (f = 0; f < n; f++) {
+      if (!f0[f]) continue;
+      var w = [];
+      for (var k = -2; k <= 2; k++) { var v = f0[f + k]; if (v) w.push(v); }
+      out[f] = w.length >= 3 ? percentile(w, 0.5) : 0;
+    }
+    return out;
+  }
+
+  // ---- CPPS ----
+  function cppsTrack(x) {
+    var hop = Math.round(FS * HOP), win = Math.round(FS * 0.0512), n = Math.max(0, Math.floor((x.length - win) / hop) + 1);
+    var half = NFFT / 2, hann = new Float32Array(win), i, f;
+    for (i = 0; i < win; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (win - 1));
+    var pre = Math.exp(-2 * Math.PI * 50 / FS);        // 50Hz からの高域強調
+    var ceps = new Array(n), re = new Float64Array(NFFT), im = new Float64Array(NFFT);
+    for (f = 0; f < n; f++) {
+      var st = f * hop;
+      re.fill(0); im.fill(0);
+      for (i = 0; i < win; i++) { var s = x[st + i] - (st + i > 0 ? pre * x[st + i - 1] : 0); re[i] = s * hann[i]; }
+      fft(re, im);
+      for (i = 0; i < NFFT; i++) { var p = re[i] * re[i] + im[i] * im[i]; re[i] = 10 * Math.log10(p + 1e-12); im[i] = 0; }
+      fft(re, im);
+      var c = new Float32Array(half);
+      for (i = 0; i < half; i++) c[i] = (re[i] * re[i] + im[i] * im[i]) / (NFFT * NFFT);
+      ceps[f] = c;
+    }
+    // 時間方向 20ms, ケフレンシー方向 0.5ms で平均
+    var tHalf = Math.max(1, Math.round(0.02 / HOP / 2)), qHalf = Math.max(1, Math.round(0.0005 * FS / 2));
+    var qLo = Math.round(0.001 * FS), qHi = Math.min(half - 1, Math.round(0.05 * FS));
+    var pLo = Math.floor(FS / 330), pHi = Math.ceil(FS / 60);
+    var out = new Float32Array(n), sm = new Float64Array(half), db = new Float64Array(half);
+    for (f = 0; f < n; f++) {
+      sm.fill(0); var cnt = 0;
+      for (var k = -tHalf; k <= tHalf; k++) { var g = f + k; if (g < 0 || g >= n) continue; cnt++; var cg = ceps[g]; for (i = 0; i < half; i++) sm[i] += cg[i]; }
+      for (i = 0; i < half; i++) sm[i] /= cnt;
+      for (i = 0; i < half; i++) {
+        var acc = 0, m = 0;
+        for (k = -qHalf; k <= qHalf; k++) { var j = i + k; if (j < 0 || j >= half) continue; acc += sm[j]; m++; }
+        db[i] = 10 * Math.log10(acc / m + 1e-20);
+      }
+      var sx = 0, sy = 0, sxx = 0, sxy = 0, N = 0;
+      for (i = qLo; i <= qHi; i++) { sx += i; sy += db[i]; sxx += i * i; sxy += i * db[i]; N++; }
+      var slope = (N * sxy - sx * sy) / (N * sxx - sx * sx), icpt = (sy - slope * sx) / N;
+      var pk = -Infinity, pi = pLo;
+      for (i = pLo; i <= pHi; i++) if (db[i] > pk) { pk = db[i]; pi = i; }
+      out[f] = pk - (slope * pi + icpt);
+    }
+    return out;
+  }
+
+  // ---- 文のまとまりに区切る ----
+  function findPhrases(level, thresh, minLen) {
+    var phrases = [], start = -1, gap = 0, lastSpeech = -1;
+    for (var f = 0; f < level.length; f++) {
+      if (level[f] >= thresh) { if (start < 0) start = f; lastSpeech = f; gap = 0; }
+      else if (start >= 0) { gap++; if (gap > 30) { phrases.push([start, lastSpeech]); start = -1; } }
+    }
+    if (start >= 0) phrases.push([start, lastSpeech]);
+    return phrases.filter(function (p) { return p[1] - p[0] >= (minLen || 80); });   // 既定は0.8秒以上
+  }
+
+  // かなの拍を数える
+  function countMora(kana) {
+    var n = 0;
+    for (var i = 0; i < kana.length; i++) {
+      var ch = kana[i];
+      if (/[ぁ-んァ-ヶー]/.test(ch) && !/[ゃゅょぁぃぅぇぉゎャュョァィゥェォヮ]/.test(ch)) n++;
+    }
+    return n;
+  }
+
+  // ---- 全体 ----
+  // samples: Float32Array (モノラル), fs: 標本化周波数, opts.mora: 読んだ文の拍数 (あれば速さを出す)
+  function analyze(samples, fs, opts) {
+    opts = opts || {};
+    var x = resample(samples, fs);
+    var duration = x.length / FS;
+    var level = levelTrack(x);
+    var peakDb = percentile(level, 0.95), floorDb = percentile(level, 0.1);
+    var thresh = Math.max(peakDb - 25, Math.min(floorDb + 6, peakDb - 10));
+    var res = { duration: duration, ok: false, reason: null };
+    if (duration < 3) { res.reason = 'short'; return res; }
+    if (peakDb < -55) { res.reason = 'quiet'; return res; }
+
+    var f0 = pitchTrack(x, level, thresh);
+    var voiced = [];
+    for (var i = 0; i < f0.length; i++) if (f0[i]) voiced.push(f0[i]);
+    if (voiced.length < 100) { res.reason = 'novoice'; return res; }   // 声の区間が1秒未満
+
+    var med = percentile(voiced, 0.5), p10 = percentile(voiced, 0.1), p90 = percentile(voiced, 0.9);
+    res.pitchHz = med;
+    res.rangeSemitone = 12 * Math.log2(p90 / p10);
+
+    // CPPS は声が出ているフレームだけで平均する
+    var cp = cppsTrack(x), ratio = 0.01 / HOP, vals = [];
+    for (i = 0; i < cp.length; i++) { var pf = Math.round(i / ratio); if (pf < f0.length && f0[pf]) vals.push(cp[i]); }
+    res.cpps = mean(vals);
+
+    // 語尾: 文のまとまりごとに、終わり300msの音量 − そのまとまりの中央値
+    var phrases = findPhrases(level, thresh), drops = [];
+    phrases.forEach(function (p) {
+      var seg = Array.from(level.subarray(p[0], p[1] + 1));
+      var tail = seg.slice(Math.max(0, seg.length - 30));
+      drops.push(mean(tail) - percentile(seg, 0.5));
+    });
+    res.endingDb = drops.length ? mean(drops) : null;
+    res.phrases = phrases.length;
+    // 声が続いている区間 (秒)。文の上に高さの線を置くときに使う
+    res.spans = findPhrases(level, thresh, 30).map(function (p) { return [p[0] * 0.01, (p[1] + 1) * 0.01]; });
+
+    // 速さ: 最初の声から最後の声までの時間で拍数を割る (間も含む)
+    var first = -1, last = -1;
+    for (i = 0; i < level.length; i++) if (level[i] >= thresh) { if (first < 0) first = i; last = i; }
+    res.speechSeconds = first >= 0 ? (last - first + 1) * 0.01 : 0;
+    res.moraPerSec = opts.mora && res.speechSeconds > 1 ? opts.mora / res.speechSeconds : null;
+
+    // 画面に描く高さの線 (0.05秒刻みに間引く)
+    var contour = [];
+    for (i = 0; i < f0.length; i += 5) {
+      var w = []; for (var k = 0; k < 5 && i + k < f0.length; k++) if (f0[i + k]) w.push(f0[i + k]);
+      contour.push(w.length >= 2 ? Math.round(percentile(w, 0.5)) : 0);
+    }
+    res.contour = contour;
+    res.noiseGapDb = peakDb - floorDb;     // 声と周りの音の差。小さいと数値が当てにならない
+    res.ok = true;
+    return res;
+  }
+
+  var api = { analyze: analyze, countMora: countMora, FS: FS, _resample: resample };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Koe = api;
+})(typeof self !== 'undefined' ? self : this);
+
+</script>
+<script>
+(function(){
+'use strict';
+// 画面に出す行ごとの文と、その読み (拍の数を数えるため)。sent は何番目の文か
+var LINES = [
+  { t: '今日は朝から晴れていたので、', k: 'きょうはあさからはれていたので', sent: 0 },
+  { t: '駅まで歩いて行きました。', k: 'えきまであるいていきました', sent: 0 },
+  { t: '途中のパン屋で、焼きたての', k: 'とちゅうのぱんやでやきたての', sent: 1 },
+  { t: '食パンを一つ買いました。', k: 'しょくぱんをひとつかいました', sent: 1 },
+  { t: '帰ったら、熱いお茶と一緒に', k: 'かえったらあついおちゃといっしょに', sent: 2 },
+  { t: '食べるつもりです。', k: 'たべるつもりです', sent: 2 }
+];
+LINES.forEach(function (l) { l.m = Koe.countMora(l.k); });
+var MORA = LINES.reduce(function (a, l) { return a + l.m; }, 0);
+var KIND_NAME = { read: '読んだ録音', talk: '話した録音' };
+var MAX_REC = 90, MAX_FILE = 180, SVG = 'http://www.w3.org/2000/svg';
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+function el(tag, attrs, kids) {
+  var e = document.createElement(tag);
+  for (var k in (attrs || {})) { if (k === 'text') e.textContent = attrs[k]; else if (k === 'cls') e.className = attrs[k]; else e.setAttribute(k, attrs[k]); }
+  (kids || []).forEach(function (c) { if (c) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+  return e;
+}
+function svgEl(tag, attrs, parent) { var e = document.createElementNS(SVG, tag); for (var k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function icon(d, stroke) { var s = svgEl('svg', { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': 'true' }); svgEl('path', stroke ? { d: d, fill: 'none', stroke: 'currentColor', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' } : { d: d, fill: 'currentColor' }, s); return s; }
+var PLAY = 'M4 2.5v11l9-5.5z', PAUSE = 'M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z', CHECK = 'M3 8.5l3.2 3.2L13 4.8', CHEV = 'M5.5 3l5 5-5 5';
+function clock(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+function dayKey(t) { var d = new Date(t); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+function dayLabel(key) { var p = key.split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]); return (+p[1]) + '月' + (+p[2]) + '日（' + '日月火水木金土'[d.getDay()] + '）'; }
+
+// ---------- 保存 (IndexedDB。使えなければページを開いている間だけ覚える) ----------
+var store = (function () {
+  var db = null, mem = [];
+  function open() {
+    return new Promise(function (res) {
+      try {
+        var rq = indexedDB.open('koe-no-kiroku', 1);
+        rq.onupgradeneeded = function () { rq.result.createObjectStore('rec', { keyPath: 'id' }); };
+        rq.onsuccess = function () { db = rq.result; res(); };
+        rq.onerror = rq.onblocked = function () { res(); };
+      } catch (e) { res(); }
+    });
+  }
+  function tx(mode, fn) {
+    return new Promise(function (res, rej) {
+      try { var t = db.transaction('rec', mode), rq = fn(t.objectStore('rec')); t.oncomplete = function () { res(rq && rq.result); }; t.onerror = t.onabort = function () { rej(t.error); }; }
+      catch (e) { rej(e); }
+    });
+  }
+  return {
+    ready: open(),
+    all: function () { if (!db) return Promise.resolve(mem.slice()); return tx('readonly', function (s) { return s.getAll(); }).catch(function () { return mem.slice(); }); },
+    put: function (r) { mem.push(r); if (!db) return Promise.resolve(false); return tx('readwrite', function (s) { return s.put(r); }).then(function () { return true; }, function () { return false; }); },
+    del: function (ids) { mem = mem.filter(function (r) { return ids.indexOf(r.id) < 0; }); if (!db) return Promise.resolve(); return tx('readwrite', function (s) { ids.forEach(function (id) { s.delete(id); }); }).catch(function () {}); }
+  };
+})();
+
+// ---------- 音声を数値にする ----------
+function decode(blob) {
+  return blob.arrayBuffer().then(function (buf) {
+    var AC = window.OfflineAudioContext || window.webkitOfflineAudioContext, ctx = new AC(1, 1, 44100);
+    return new Promise(function (res, rej) { var p = ctx.decodeAudioData(buf, res, rej); if (p && p.catch) p.catch(rej); });
+  }).then(function (ab) {
+    var n = ab.length, mono = new Float32Array(n), ch = ab.numberOfChannels;
+    for (var c = 0; c < ch; c++) { var d = ab.getChannelData(c); for (var i = 0; i < n; i++) mono[i] += d[i] / ch; }
+    return { samples: mono, fs: ab.sampleRate, duration: ab.duration };
+  });
+}
+var REASON = {
+  short: '録音が3秒より短いため、数値を出せません。もう一度録音してください。',
+  quiet: '音がほとんど入っていません。マイクに近づいて、もう一度録音してください。',
+  novoice: '声の部分を見つけられませんでした。静かな場所で、もう一度録音してください。',
+  long: '3分を超える音声は使えません。短く録り直してください。',
+  decode: 'この形式の音声は読み込めませんでした。別のアプリで録音するか、m4a・mp3・wav形式の音声を選んでください。'
+};
+function process(blob, kind) {
+  return decode(blob).then(function (a) {
+    if (a.duration > MAX_FILE) return { ok: false, reason: 'long' };
+    return new Promise(function (res) { setTimeout(function () { res(Koe.analyze(a.samples, a.fs, kind === 'read' ? { mora: MORA } : {})); }, 30); });
+  }, function () { return { ok: false, reason: 'decode' }; });
+}
+
+// ---------- 数値の項目 ----------
+var ROWS = [
+  { key: 'cpps', name: '声の澄み具合', unit: 'dB', digits: 1, note: 'かすれや息漏れが少ないほど、数値が大きくなります。' },
+  { key: 'pitchHz', name: '声の高さ', unit: 'Hz', digits: 0, note: '録音全体の真ん中の高さです。' },
+  { key: 'rangeSemitone', name: '抑揚の幅', unit: '半音', digits: 1, note: '高く話した所と低く話した所の差です。' },
+  { key: 'endingDb', name: '語尾の音量', unit: 'dB', digits: 1, note: '文の中ほどと比べた、文の終わり0.3秒の音量です。0に近いほど、語尾まで声が出ています。' },
+  { key: 'moraPerSec', name: '読む速さ', unit: '拍/秒', digits: 1, note: '1秒あたりに読んだ音の数です。', only: 'read' }
+];
+function has(v) { return !(v === null || v === undefined || isNaN(v)); }
+function fmt(v, d) { return has(v) ? v.toFixed(d).replace('-', '−') : '—'; }
+function valueCell(v, row) {
+  var c = el('div', { cls: 'v num' }, [fmt(v, row.digits)]);
+  if (has(v)) c.appendChild(el('small', { text: row.unit }));
+  return c;
+}
+function sameKind(list, rec) { return list.filter(function (r) { return r.kind === rec.kind && r.time < rec.time; }).sort(function (a, b) { return a.time - b.time; }); }
+
+// 今回の数値の行。横棒は、過去14回の範囲の中での今回の位置
+function metricRows(rec, list) {
+  var past = sameKind(list, rec).slice(-14), prev = past[past.length - 1] || null;
+  var box = el('div', { cls: 'rows' });
+  if (prev) {
+    var key = el('div', { cls: 'key' }, [el('span', {}, [el('i', { cls: 'kd' }), '今回']), el('span', {}, [el('i', { cls: 'kt' }), '前回'])]);
+    if (past.length >= 2) key.appendChild(el('span', {}, [el('i', { cls: 'kb' }), '過去' + past.length + '回の範囲']));
+    box.appendChild(key);
+  }
+  ROWS.forEach(function (row) {
+    if (row.only && row.only !== rec.kind) return;
+    var v = rec.m[row.key], h3 = el('h3', {}, [row.name]);
+    var pv = prev ? prev.m[row.key] : null;
+    if (has(v) && has(pv)) {
+      var d = +v.toFixed(row.digits) - +pv.toFixed(row.digits);
+      h3.appendChild(el('small', { text: d === 0 ? '前回と同じ' : '前回より ' + (d > 0 ? '+' : '−') + Math.abs(d).toFixed(row.digits) }));
+    }
+    var rg = el('div', { cls: 'rg', 'aria-hidden': 'true' });
+    if (has(v)) {
+      var vals = past.map(function (r) { return r.m[row.key]; }).filter(has), all = vals.concat([v]);
+      var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all), span = (hi - lo) || Math.max(1, Math.abs(v) * 0.1);
+      lo -= span * 0.18; hi += span * 0.18;
+      var pos = function (x) { return (100 * (x - lo) / (hi - lo)).toFixed(1) + '%'; };
+      if (vals.length >= 2) { var a = Math.min.apply(null, vals), b = Math.max.apply(null, vals); rg.appendChild(el('b', { style: 'left:' + pos(a) + ';width:' + (100 * (b - a) / (hi - lo)).toFixed(1) + '%' })); }
+      if (has(pv)) rg.appendChild(el('u', { style: 'left:' + pos(pv) }));
+      rg.appendChild(el('s', { style: 'left:' + (vals.length ? pos(v) : '50%') }));
+    }
+    box.appendChild(el('div', { cls: 'r' }, [h3, rg, valueCell(v, row)]));
+  });
+  return box;
+}
+function guide(kind, open, withBars) {
+  var dl = el('dl');
+  if (withBars) { dl.appendChild(el('dt', { text: '横の棒' })); dl.appendChild(el('dd', { text: '朱色の丸が今回、縦の線が前回です。灰色の帯は、過去の記録の最小から最大までの範囲です。' })); }
+  ROWS.forEach(function (row) { if (row.only && row.only !== kind) return; dl.appendChild(el('dt', { text: row.name })); dl.appendChild(el('dd', { text: row.note })); });
+  dl.appendChild(el('dt', { text: '数値の使い方' }));
+  dl.appendChild(el('dd', { text: '数値はこのページ独自の計算で、医療の検査の値とは比べられません。前回の自分の数値と比べるために使ってください。' }));
+  var d = el('details', {}, [el('summary', {}, [icon(CHEV, true), '数値の見方']), dl]);
+  if (open) d.setAttribute('open', '');
+  return d;
+}
+
+// ---------- 声の高さの線 ----------
+// 録音の中で声が続いている区間だけをつなぎ、0〜1 の位置に直す
+function speechPoints(m) {
+  var c = m.contour || [], spans = (m.spans && m.spans.length) ? m.spans : [[0, m.duration || c.length * 0.05]];
+  var total = spans.reduce(function (a, s) { return a + (s[1] - s[0]); }, 0), pts = [], before = 0;
+  spans.forEach(function (s, si) {
+    for (var i = Math.ceil(s[0] / 0.05); i * 0.05 < s[1] && i < c.length; i++) pts.push({ f: (before + i * 0.05 - s[0]) / total, local: (i * 0.05 - s[0]) / (s[1] - s[0]), span: si, hz: c[i] });
+    before += s[1] - s[0];
+  });
+  return { pts: pts, spans: spans.length };
+}
+function hzScale(recs) {
+  var all = [];
+  recs.forEach(function (m) { if (m) (m.contour || []).forEach(function (v) { if (v > 0) all.push(v); }); });
+  all.sort(function (a, b) { return a - b; });
+  if (all.length < 4) return null;
+  var lo = all[Math.floor(all.length * 0.03)] * 0.97, hi = all[Math.floor(all.length * 0.97)] * 1.03;
+  return function (hz) { return Math.max(0, Math.min(1, Math.log(hz / lo) / Math.log(hi / lo))); };
+}
+// 読んだ文の各行の上に線を置く。声の区間が文の数と同じなら文ごとに、違えば全体を拍の数で割り振る
+function textFigure(now, prev) {
+  var sc = hzScale([now, prev]);
+  var box = el('div'), lines = LINES.map(function (l) { var d = el('div', { cls: 'ln' }, [el('span', { text: l.t })]); box.appendChild(d); return d; });
+  function place(m) {
+    var sp = speechPoints(m), bySent = sp.spans === 3, out = LINES.map(function () { return []; });
+    var cum = [], acc = 0; LINES.forEach(function (l) { cum.push(acc); acc += l.m; });
+    var sentStart = [0, 0, 0], sentMora = [0, 0, 0];
+    LINES.forEach(function (l, i) { if (!sentMora[l.sent]) sentStart[l.sent] = cum[i]; sentMora[l.sent] += l.m; });
+    sp.pts.forEach(function (p) {
+      var mora = bySent ? sentStart[p.span] + p.local * sentMora[p.span] : p.f * MORA, li = LINES.length - 1;
+      for (var i = 0; i < LINES.length; i++) if (mora < cum[i] + LINES[i].m) { li = i; break; }
+      out[li].push({ u: Math.max(0, Math.min(1, (mora - cum[li]) / LINES[li].m)), hz: p.hz });
+    });
+    return out;
+  }
+  function draw() {
+    if (!sc) return;
+    var w = box.clientWidth; if (!w) return;
+    var size = Math.min(21, Math.floor(w / 15.2 * 10) / 10);
+    var a = place(now), b = prev ? place(prev) : null;
+    lines.forEach(function (d, i) {
+      d.style.fontSize = size + 'px';
+      var old = $('svg', d); if (old) old.remove();
+      var span = $('span', d), tw = span.getBoundingClientRect().width - size * 1.04;   // 行末の句読点の分を除く
+      if (/[^、。]$/.test(LINES[i].t)) tw += size * 1.04;
+      var svg = svgEl('svg', { 'aria-hidden': 'true' });
+      function path(arr, attrs) {
+        var dd = '', pen = false;
+        arr.forEach(function (p) { if (p.hz > 0) { dd += (pen ? 'L' : 'M') + (p.u * tw).toFixed(1) + ' ' + (27 - 23 * sc(p.hz)).toFixed(1); pen = true; } else pen = false; });
+        if (dd) { attrs.d = dd; attrs.fill = 'none'; attrs['stroke-linecap'] = 'round'; attrs['stroke-linejoin'] = 'round'; svgEl('path', attrs, svg); }
+      }
+      if (b) path(b[i], { stroke: '#8C8C92', 'stroke-width': 1.6, 'stroke-dasharray': '4 3' });
+      path(a[i], { stroke: '#D3381C', 'stroke-width': 2.4 });
+      d.insertBefore(svg, span);
+    });
+  }
+  box._draw = draw;
+  return box;
+}
+// 話した録音は文がないので、時間に沿った線にする
+function timeFigure(now, prev) {
+  var sc = hzScale([now, prev]); if (!sc) return null;
+  var W = 350, H = 96, svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + (H + 18), role: 'img', 'aria-label': prev ? '今回と前回の、声の高さの動きを重ねた図' : '今回の声の高さの動きの図' });
+  var maxLen = Math.max((now.contour || []).length, prev ? (prev.contour || []).length : 0);
+  svgEl('line', { x1: 0, x2: W, y1: H, y2: H, stroke: '#DCDBD6', 'stroke-width': 1 }, svg);
+  var secs = maxLen * 0.05, step = secs > 40 ? 20 : 10;
+  for (var s = 0; s <= secs; s += step) { var t = svgEl('text', { x: W * (s / 0.05) / Math.max(1, maxLen - 1), y: H + 15, 'font-size': 11, fill: '#66666C', 'text-anchor': s === 0 ? 'start' : 'middle' }, svg); t.textContent = s + '秒'; }
+  function path(c, attrs) {
+    var d = '', pen = false;
+    c.forEach(function (v, i) { if (v > 0) { d += (pen ? 'L' : 'M') + (W * i / Math.max(1, maxLen - 1)).toFixed(1) + ' ' + (H - 6 - (H - 12) * sc(v)).toFixed(1); pen = true; } else pen = false; });
+    attrs.d = d; attrs.fill = 'none'; attrs['stroke-linecap'] = 'round'; attrs['stroke-linejoin'] = 'round'; svgEl('path', attrs, svg);
+  }
+  if (prev) path(prev.contour || [], { stroke: '#8C8C92', 'stroke-width': 1.6, 'stroke-dasharray': '4 3' });
+  path(now.contour || [], { stroke: '#D3381C', 'stroke-width': 2.2 });
+  return el('div', { cls: 'chart' }, [svg]);
+}
+
+// ---------- 再生ボタン ----------
+var urls = [], playing = null;
+function playButton(name, blob, cls) {
+  var a = new Audio(); a.preload = 'metadata';
+  try { var u = URL.createObjectURL(blob); urls.push(u); a.src = u; } catch (e) {}
+  var btn = el('button', { cls: 'btn ' + (cls === undefined ? 'sec' : cls), type: 'button' });
+  function label(on) { btn.textContent = ''; btn.appendChild(icon(on ? PAUSE : PLAY)); btn.appendChild(document.createTextNode(on ? '再生を止める' : name + 'を再生する')); }
+  a.addEventListener('play', function () { if (playing && playing !== a) playing.pause(); playing = a; label(true); });
+  a.addEventListener('pause', function () { label(false); });
+  a.addEventListener('ended', function () { a.currentTime = 0; });
+  btn.addEventListener('click', function () { if (a.paused) { var p = a.play(); if (p && p.catch) p.catch(function () { label(false); }); } else a.pause(); });
+  label(false);
+  return btn;
+}
+function stopAudio() { if (playing) playing.pause(); urls.splice(0).forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} }); }
+
+// ---------- 今日の手順 ----------
+var step = 'prep', resultKind = 'read', notSaved = false, redraw = null;
+function todayRecs(list) {
+  var k = dayKey(Date.now()), out = {};
+  list.filter(function (r) { return dayKey(r.time) === k; }).sort(function (a, b) { return a.time - b.time; }).forEach(function (r) { out[r.kind] = r; });
+  return out;
+}
+function markSteps(list) {
+  var t = todayRecs(list);
+  $$('#steps button').forEach(function (b) {
+    var s = b.getAttribute('data-step'), done = (s === 'read' && t.read) || (s === 'talk' && t.talk);
+    var has2 = $('svg', b); if (has2) has2.remove();
+    if (done) { b.insertBefore(icon(CHECK, true), b.firstChild); b.setAttribute('aria-label', b.textContent + '（録音済み）'); } else b.removeAttribute('aria-label');
+  });
+}
+function go(s, kind) {
+  step = s; if (kind) resultKind = kind;
+  $$('#steps button').forEach(function (b) { var on = b.getAttribute('data-step') === s; b.setAttribute('aria-selected', on ? 'true' : 'false'); b.tabIndex = on ? 0 : -1; });
+  $$('[data-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-panel') !== s; });
+  if (s === 'result') renderResult(); else stopAudio();
+  window.scrollTo(0, 0);
+}
+function renderResult() {
+  var box = $('#result'); stopAudio();
+  return store.all().then(function (list) {
+    markSteps(list);
+    var t = todayRecs(list); box.textContent = ''; redraw = null;
+    if (!t.read && !t.talk) {
+      box.appendChild(el('div', { cls: 'pad' }, [el('h2', { text: '今日の結果' }), el('p', { text: '今日の録音はまだありません。録音すると、ここに数値と声の高さの線が出ます。' }), el('div', { cls: 'row' }, [act('読む録音に進む', function () { go('read'); })])]));
+      return;
+    }
+    if (!t[resultKind]) resultKind = t.read ? 'read' : 'talk';
+    var rec = t[resultKind], past = sameKind(list, rec), prev = past[past.length - 1] || null;
+    if (t.read && t.talk) {
+      var seg = el('div', { cls: 'seg', role: 'group', 'aria-label': '結果を見る録音' });
+      ['read', 'talk'].forEach(function (k) { var b = el('button', { type: 'button', 'aria-pressed': k === resultKind ? 'true' : 'false', text: KIND_NAME[k] }); b.addEventListener('click', function () { resultKind = k; renderResult(); }); seg.appendChild(b); });
+      box.appendChild(seg);
+    }
+    var legend = el('span', { cls: 'legend' }, [el('span', {}, [el('i'), '今回'])]);
+    if (prev) legend.appendChild(el('span', {}, [el('i', { cls: 'p' }), '前回']));
+    var fig = el('div', { cls: 'fig' }, [el('div', { cls: 'fighead' }, [el('h2', { text: '声の高さの動き', style: 'font-size:15px;margin:0' }), legend])]);
+    if (t.read && t.talk) fig.style.marginTop = '14px';
+    if (rec.kind === 'read') { var tf = textFigure(rec.m, prev ? prev.m : null); fig.appendChild(tf); redraw = tf._draw; }
+    else { var cf = timeFigure(rec.m, prev ? prev.m : null); if (cf) fig.appendChild(cf); }
+    box.appendChild(fig);
+    var play = el('div', { cls: 'play' }, [playButton('今回', rec.blob, '')]);
+    if (prev && prev.blob) play.appendChild(playButton('前回', prev.blob, 'sec'));
+    box.appendChild(play);
+    box.appendChild(metricRows(rec, list));
+    var after = el('div', { cls: 'after' }, [guide(rec.kind, !prev, !!prev)]);
+    if (rec.m.noiseGapDb < 20) after.appendChild(el('p', { cls: 'msg', text: '周りの音が大きく、数値が正確でない可能性があります。静かな場所で録り直すと、比べやすくなります。' }));
+    if (notSaved) after.appendChild(el('p', { cls: 'msg', text: 'この端末に保存できませんでした。ページを閉じると、今回の記録は消えます。' }));
+    if (!prev) after.appendChild(el('p', { cls: 'sub', style: 'margin-top:12px', text: '次に録音すると、今回の線と数値に前回の分が重なって出ます。' }));
+    if (!t.talk) after.appendChild(el('div', { cls: 'row' }, [act('話す録音に進む', function () { go('talk'); }, 'btn wide')]));
+    else if (!t.read) after.appendChild(el('div', { cls: 'row' }, [act('読む録音に進む', function () { go('read'); }, 'btn wide')]));
+    else after.appendChild(el('p', { cls: 'done', role: 'status', text: '今日の記録はこれで終わりです。録音は保存してあります。' }));
+    box.appendChild(after);
+    if (redraw) { redraw(); if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (redraw) redraw(); }); }
+  });
+}
+function act(text, fn, cls) { var b = el('button', { cls: cls || 'btn', type: 'button', text: text }); b.addEventListener('click', fn); return b; }
+window.addEventListener('resize', function () { if (redraw && step === 'result') redraw(); });
+
+// ---------- 録音の操作 ----------
+var micBlocked = false;
+try { micBlocked = localStorage.getItem('koe-mic-blocked') === '1'; } catch (e) {}
+if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder)) micBlocked = true;
+// 別のページの枠の中で開かれている場合は、マイクを使えない設定になっている。最初から音声を選ぶ手順を出す
+try { if (window.self !== window.top) micBlocked = true; } catch (e) { micBlocked = true; }
+var appliers = [];
+function setupRecorder(section) {
+  var kind = section.getAttribute('data-kind'), host = $('.rec', section);
+  host.appendChild($('#rec-tpl').content.cloneNode(true));
+  var start = $('.start', host), ctl = $('.ctl', host), liveRow = $('.live-row', host), clk = $('.clock', host), stop = $('.stop', host);
+  var busy = $('.busy', host), msg = $('.msg', host), file = $('input[type=file]', host), fileBtn = $('.filebtn', host), how = $('.how', host);
+  var rec = null, stream = null, tick = null, t0 = 0;
+  function say(t) { msg.textContent = t; msg.hidden = !t; }
+  function applyMic() { start.hidden = micBlocked; how.hidden = !micBlocked; fileBtn.className = micBlocked ? 'filebtn' : 'filebtn sec'; }
+  applyMic(); appliers.push(applyMic);
+  function done(blob) {
+    say(''); busy.hidden = false; ctl.hidden = true;
+    process(blob, kind).then(function (m) {
+      busy.hidden = true; ctl.hidden = false;
+      if (!m.ok) { say(REASON[m.reason] || REASON.decode); return; }
+      var r = { id: Date.now() + '-' + kind, time: Date.now(), kind: kind, m: m, blob: blob };
+      return store.put(r).then(function (saved) { notSaved = !saved; go('result', kind); });
+    }).catch(function () { busy.hidden = true; ctl.hidden = false; say(REASON.decode); });
+  }
+  start.addEventListener('click', function () {
+    say('');
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function (s) {
+      stream = s; var chunks = [];
+      rec = new MediaRecorder(s);
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = function () { clearInterval(tick); stream.getTracks().forEach(function (t) { t.stop(); }); liveRow.hidden = true; done(new Blob(chunks, { type: rec.mimeType || 'audio/webm' })); };
+      rec.start(); t0 = Date.now(); clk.textContent = '録音中 0:00';
+      ctl.hidden = true; liveRow.hidden = false; stop.focus();
+      tick = setInterval(function () { var s2 = (Date.now() - t0) / 1000; clk.textContent = '録音中 ' + clock(s2); if (s2 >= MAX_REC && rec.state === 'recording') rec.stop(); }, 250);
+    }).catch(function () {
+      micBlocked = true; try { localStorage.setItem('koe-mic-blocked', '1'); } catch (e) {}
+      appliers.forEach(function (f) { f(); });
+    });
+  });
+  stop.addEventListener('click', function () { if (rec && rec.state === 'recording') rec.stop(); });
+  file.addEventListener('change', function () { var f = file.files && file.files[0]; file.value = ''; if (f) done(f); });
+}
+
+// ---------- 準備のタイマー ----------
+(function () {
+  var btn = $('#timer-btn'), face = $('#timer'), note = $('#timer-note'), next = $('#prep-next'), id = null, end = 0;
+  function reset() { clearInterval(id); id = null; btn.textContent = '1分のタイマーを始める'; }
+  btn.addEventListener('click', function () {
+    if (id) { reset(); face.textContent = '1:00'; note.textContent = ''; return; }
+    end = Date.now() + 60000; btn.textContent = 'タイマーを止める'; note.textContent = ''; face.textContent = '1:00';
+    id = setInterval(function () {
+      var left = (end - Date.now()) / 1000;
+      if (left <= 0) { reset(); face.textContent = '0:00'; note.textContent = '1分たちました。'; next.textContent = '読む録音に進む'; next.className = 'btn'; btn.className = 'btn sec'; next.focus(); }
+      else face.textContent = clock(Math.ceil(left));
+    }, 250);
+  });
+  next.addEventListener('click', function () { reset(); go('read'); });
+})();
+$('#talk-skip').addEventListener('click', function () { go('result'); });
+
+// ---------- 記録 ----------
+var logKind = 'read';
+function trendRow(row, recs) {
+  var vals = recs.map(function (r) { return r.m[row.key]; }), ok = vals.filter(has);
+  var W = 160, H = 36, svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+  if (ok.length >= 2) {
+    var lo = Math.min.apply(null, ok), hi = Math.max.apply(null, ok), span = (hi - lo) || 1, d = '', pen = false, lx = 0, ly = 0;
+    vals.forEach(function (v, i) { if (!has(v)) { pen = false; return; } var x = 6 + (W - 12) * i / (vals.length - 1), y = 6 + (H - 12) * (1 - (v - lo) / span); d += (pen ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1); pen = true; lx = x; ly = y; });
+    svgEl('path', { d: d, fill: 'none', stroke: '#17171B', 'stroke-width': 1.6, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }, svg);
+    var dot = el('i', { style: 'position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:#D3381C;left:' + (100 * lx / W).toFixed(1) + '%;top:' + ly.toFixed(1) + 'px' });
+    return el('div', { cls: 'r' }, [el('h3', { text: row.name }), el('div', { cls: 'tr', style: 'position:relative' }, [svg, dot]), valueCell(vals[vals.length - 1], row)]);
+  }
+  return el('div', { cls: 'r' }, [el('h3', { text: row.name }), el('div', { cls: 'tr' }), valueCell(vals[vals.length - 1], row)]);
+}
+function renderLog() {
+  var log = $('#view-log'); stopAudio();
+  return store.all().then(function (list) {
+    log.textContent = '';
+    if (!list.length) { log.appendChild(el('div', { cls: 'pad' }, [el('h2', { text: 'これまでの記録' }), el('p', { text: 'まだ記録がありません。「今日」で録音すると、ここに数値の移り変わりと日ごとの録音が並びます。' })])); return; }
+    var kinds = ['read', 'talk'].filter(function (k) { return list.some(function (r) { return r.kind === k; }); });
+    if (kinds.indexOf(logKind) < 0) logKind = kinds[0];
+    var recs = list.filter(function (r) { return r.kind === logKind; }).sort(function (a, b) { return a.time - b.time; }).slice(-14);
+    log.appendChild(el('div', { cls: 'secthead' }, [el('h2', { text: '数値の移り変わり' }), el('span', { cls: 'sub', text: recs.length >= 2 ? '直近' + recs.length + '回' : '' })]));
+    if (kinds.length > 1) {
+      var seg = el('div', { cls: 'seg', role: 'group', 'aria-label': '移り変わりを見る録音', style: 'margin-top:0;margin-bottom:12px' });
+      kinds.forEach(function (k) { var b = el('button', { type: 'button', 'aria-pressed': k === logKind ? 'true' : 'false', text: KIND_NAME[k] }); b.addEventListener('click', function () { logKind = k; renderLog(); }); seg.appendChild(b); });
+      log.appendChild(seg);
+    }
+    var rows = el('div', { cls: 'rows' });
+    ROWS.forEach(function (row) { if (row.only && row.only !== logKind) return; rows.appendChild(trendRow(row, recs)); });
+    log.appendChild(rows);
+    if (recs.length < 2) log.appendChild(el('p', { cls: 'sub', style: 'padding:8px 20px 0', text: '2回目の録音から、ここに線が出ます。右の数値は最新の記録です。' }));
+    else log.appendChild(el('p', { cls: 'sub', style: 'padding:8px 20px 0', text: '線は古い記録から新しい記録への移り変わりです。朱色の丸と右の数値が最新の記録です。' }));
+
+    log.appendChild(el('div', { cls: 'secthead' }, [el('h2', { text: '日ごとの録音' })]));
+    var days = {}, wrap = el('div', { cls: 'rows' });
+    list.forEach(function (r) { var k = dayKey(r.time); (days[k] = days[k] || []).push(r); });
+    Object.keys(days).sort().reverse().forEach(function (k) {
+      var d = el('div', { cls: 'day' }, [el('h3', { text: dayLabel(k) })]), btns = el('div', { cls: 'row' });
+      ['read', 'talk'].forEach(function (kind) {
+        var rs = days[k].filter(function (r) { return r.kind === kind; }).sort(function (a, b) { return b.time - a.time; });
+        if (rs.length && rs[0].blob) btns.appendChild(playButton(KIND_NAME[kind], rs[0].blob, 'sec'));
+      });
+      var ids = days[k].map(function (r) { return r.id; });
+      var del = act('この日の記録を削除する', function () { conf.hidden = false; del.hidden = true; no.focus(); }, 'btn text');
+      var yes = act('削除する', function () { store.del(ids).then(function () { store.all().then(markSteps); renderLog(); }); }, 'btn stop');
+      var no = act('削除しない', function () { conf.hidden = true; del.hidden = false; del.focus(); }, 'btn sec');
+      var conf = el('div', { cls: 'confirm', hidden: '' }, [el('p', { text: dayLabel(k) + 'の記録と録音を削除します。元に戻せません。' }), el('div', { cls: 'row', style: 'margin-top:10px' }, [yes, no])]);
+      btns.appendChild(del); d.appendChild(btns); d.appendChild(conf); wrap.appendChild(d);
+    });
+    log.appendChild(wrap);
+    log.appendChild(el('p', { cls: 'sub', style: 'padding:16px 20px 28px', text: '記録はこの端末のこのブラウザに保存されます。別の端末からは見られません。ブラウザのデータを消すと、記録も消えます。' }));
+  });
+}
+
+// ---------- 画面の切り替え ----------
+function view(v) {
+  var today = v === 'today';
+  $('#view-today').hidden = !today; $('#view-log').hidden = today; $('#steps').hidden = !today;
+  $('#nav-today').toggleAttribute('aria-current', today); $('#nav-log').toggleAttribute('aria-current', !today);
+  if (today) { $('#nav-today').setAttribute('aria-current', 'page'); if (step === 'result') renderResult(); else stopAudio(); }
+  else { $('#nav-log').setAttribute('aria-current', 'page'); renderLog(); }
+  window.scrollTo(0, 0);
+}
+$('#nav-today').addEventListener('click', function () { view('today'); });
+$('#nav-log').addEventListener('click', function () { view('log'); });
+$$('#steps button').forEach(function (b, i, all) {
+  b.addEventListener('click', function () { go(b.getAttribute('data-step')); });
+  b.addEventListener('keydown', function (e) { var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0; if (!d) return; var n = all[(i + d + all.length) % all.length]; go(n.getAttribute('data-step')); n.focus(); });
+});
+
+$('#today-label').textContent = dayLabel(dayKey(Date.now()));
+// 読む文 (線なし)
+(function () {
+  var box = $('#passage'), lines = LINES.map(function (l) { var d = el('div', { cls: 'ln', text: l.t }); box.appendChild(d); return d; });
+  function fit() { var w = box.clientWidth - 32; if (w > 0) lines.forEach(function (d) { d.style.fontSize = Math.min(21, Math.floor(w / 15.2 * 10) / 10) + 'px'; }); }
+  window.addEventListener('resize', fit); window._fitPassage = fit;
+})();
+store.ready.then(function () {
+  $$('section[data-kind]').forEach(setupRecorder);
+  return store.all();
+}).then(function (list) {
+  markSteps(list);
+  var t = todayRecs(list);
+  if (t.read || t.talk) go('result', t.read ? 'read' : 'talk');   // 今日すでに録音していれば、結果から始める
+});
+var _go = go; go = function (s, k) { _go(s, k); if (s === 'read' && window._fitPassage) window._fitPassage(); };
+})();
+</script>
+</body>
+</html>
