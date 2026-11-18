@@ -713,7 +713,12 @@ window.addEventListener('resize', function () { if (redraw && step === 'result')
 
 // ---------- 録音の操作 ----------
 var micBlocked = false;
-try { micBlocked = localStorage.getItem('koe-mic-blocked') === '1'; } catch (e) {}
+try { localStorage.removeItem('koe-mic-blocked'); } catch (e) {}   // 以前の版が残した印を消す
+var MIC_MSG = {
+  denied: 'マイクが許可されていません。アドレス欄の左端のアイコンを押し、「権限」でマイクを許可してから、もう一度「録音を始める」を押してください。',
+  none: 'マイクが見つかりませんでした。イヤホンなどを外して、もう一度「録音を始める」を押してください。',
+  other: 'マイクを開始できませんでした。もう一度「録音を始める」を押してください。直らない場合は「録音済みの音声を選ぶ」を使えます。'
+};
 if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder)) micBlocked = true;
 // 別のページの枠の中で開かれている場合は、マイクを使えない設定になっている。最初から音声を選ぶ手順を出す
 try { if (window.self !== window.top) micBlocked = true; } catch (e) { micBlocked = true; }
@@ -746,9 +751,9 @@ function setupRecorder(section) {
       rec.start(); t0 = Date.now(); clk.textContent = '録音中 0:00';
       ctl.hidden = true; liveRow.hidden = false; stop.focus();
       tick = setInterval(function () { var s2 = (Date.now() - t0) / 1000; clk.textContent = '録音中 ' + clock(s2); if (s2 >= MAX_REC && rec.state === 'recording') rec.stop(); }, 250);
-    }).catch(function () {
-      micBlocked = true; try { localStorage.setItem('koe-mic-blocked', '1'); } catch (e) {}
-      appliers.forEach(function (f) { f(); });
+    }).catch(function (err) {
+      var n = err && err.name;
+      say(n === 'NotAllowedError' || n === 'SecurityError' ? MIC_MSG.denied : n === 'NotFoundError' ? MIC_MSG.none : MIC_MSG.other);
     });
   });
   stop.addEventListener('click', function () { if (rec && rec.state === 'recording') rec.stop(); });
