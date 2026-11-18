@@ -131,6 +131,11 @@ dl{margin:0 0 8px}dt{font-weight:700;font-size:14px}dd{margin:0 0 10px;color:var
 .opts{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .opts button{appearance:none;min-height:44px;padding:8px 14px;border:1.5px solid var(--ink);border-radius:var(--r);background:transparent;font-size:14px;font-weight:700;cursor:pointer}
 .opts button[aria-pressed=true]{background:var(--ink);color:#fff}
+.flabel{display:block;margin-top:18px;font-size:14px;font-weight:700}
+.field{display:block;width:100%;min-height:48px;margin-top:6px;padding:10px 12px;border:1.5px solid var(--ink);border-radius:var(--r);background:#fff;color:var(--ink);font:inherit;font-size:16px}
+.field:focus-visible{outline:3px solid var(--shu);outline-offset:2px}
+.vtext{font-family:"Noto Serif JP","Noto Serif CJK JP",serif;font-weight:500;font-size:18px;line-height:2;padding:12px 16px;letter-spacing:.02em}
+.qlist li span:last-child{flex:1}
 body.in-lesson .top,body.in-lesson .nav,body.in-lesson .steps{display:none}
 @media (max-width:359px){.r{grid-template-columns:92px minmax(0,1fr) auto;gap:8px}.r .v{font-size:21px;min-width:74px}.steps{gap:16px}}
 </style>
@@ -442,7 +447,15 @@ body.in-lesson .top,body.in-lesson .nav,body.in-lesson .steps{display:none}
     return res;
   }
 
-  var api = { analyze: analyze, countMora: countMora, FS: FS, _resample: resample };
+  // 高さと音量の時間変化だけを返す (10ms刻み)。お手本と自分の声を比べるために使う
+  function tracks(samples, fs) {
+    var x = resample(samples, fs), level = levelTrack(x);
+    var peakDb = percentile(level, 0.95), floorDb = percentile(level, 0.1);
+    var thresh = Math.max(peakDb - 25, Math.min(floorDb + 6, peakDb - 10));
+    return { f0: pitchTrack(x, level, thresh), level: level, thresh: thresh, duration: x.length / FS };
+  }
+
+  var api = { analyze: analyze, tracks: tracks, countMora: countMora, FS: FS, _resample: resample };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.Koe = api;
 })(typeof self !== 'undefined' ? self : this);
 
@@ -609,7 +622,61 @@ body.in-lesson .top,body.in-lesson .nav,body.in-lesson .steps{display:none}
     return n;
   }
 
-  var api = { framePitch: framePitch, makeJudge: makeJudge, streak: streak, LIMIT: LIMIT, _st: st };
+  // ---- お手本と自分の声を比べる ----
+  // m, u: 高さの列 (10ms刻み、声がない所は0)。
+  // 声の始まりから終わりまでを切り出し、長さをそろえてから、時間のずれを許して重ねる (DTW)。
+  // 返す値: shape=高さの動きの平均のずれ(半音), offset=全体の高さの差(半音), durM/durU=長さ(秒),
+  //         rangeM/rangeU=高さの幅(半音), score=近さ(0〜100), parts, map=自分の各点がお手本のどの点に当たるか
+  function trimVoiced(f0) {
+    var a = -1, b = -1;
+    for (var i = 0; i < f0.length; i++) if (f0[i] > 0) { if (a < 0) a = i; b = i; }
+    return a < 0 ? null : { a: a, b: b };
+  }
+  function shapeOf(f0, N) {
+    var r = trimVoiced(f0); if (!r || r.b - r.a < 8) return null;
+    var hz = []; for (var i = r.a; i <= r.b; i++) if (f0[i] > 0) hz.push(f0[i]);
+    if (hz.length < 8) return null;
+    var med = median(hz), raw = [], k;
+    // 声のない所は前後からつなぐ
+    var last = null;
+    for (i = r.a; i <= r.b; i++) { if (f0[i] > 0) last = st(f0[i], med); raw.push(f0[i] > 0 ? last : null); }
+    for (i = 0; i < raw.length; i++) if (raw[i] === null) {
+      var j = i; while (j < raw.length && raw[j] === null) j++;
+      var lo = i > 0 ? raw[i - 1] : raw[j], hi = j < raw.length ? raw[j] : lo;
+      for (k = i; k < j; k++) raw[k] = lo + (hi - lo) * (k - i + 1) / (j - i + 1);
+      i = j - 1;
+    }
+    var out = [];
+    for (i = 0; i < N; i++) { var p = i * (raw.length - 1) / (N - 1), a = Math.floor(p), b = Math.min(raw.length - 1, a + 1); out.push(raw[a] + (raw[b] - raw[a]) * (p - a)); }
+    return { v: out, med: med, dur: (r.b - r.a + 1) * 0.01, range: pct(hz.map(function (h) { return st(h, med); }), 0.9) - pct(hz.map(function (h) { return st(h, med); }), 0.1), start: r.a, end: r.b };
+  }
+  function compare(mF0, uF0) {
+    var N = 64, W = 12, M = shapeOf(mF0, N), U = shapeOf(uF0, N);
+    if (!M || !U) return null;
+    var INF = 1e9, D = [], i, j;
+    for (i = 0; i < N; i++) { D.push(new Float64Array(N).fill(INF)); }
+    for (i = 0; i < N; i++) for (j = Math.max(0, i - W); j <= Math.min(N - 1, i + W); j++) {
+      var c = Math.abs(U.v[i] - M.v[j]), best = i === 0 && j === 0 ? 0 : Math.min(i > 0 ? D[i - 1][j] : INF, j > 0 ? D[i][j - 1] : INF, i > 0 && j > 0 ? D[i - 1][j - 1] : INF);
+      D[i][j] = c + best;
+    }
+    // 戻りながら対応を取る
+    var acc = new Float64Array(N), cnt = new Float64Array(N), steps = 0, sum = 0; i = N - 1; j = N - 1;
+    for (;;) {
+      acc[i] += j; cnt[i]++; sum += Math.abs(U.v[i] - M.v[j]); steps++;
+      if (i === 0 && j === 0) break;
+      var a = i > 0 ? D[i - 1][j] : INF, b = j > 0 ? D[i][j - 1] : INF, d = i > 0 && j > 0 ? D[i - 1][j - 1] : INF;
+      if (d <= a && d <= b) { i--; j--; } else if (a <= b) i--; else j--;
+    }
+    var map = []; for (i = 0; i < N; i++) map.push(acc[i] / cnt[i]);
+    var shape = sum / steps, offset = st(U.med, M.med), ratio = U.dur / M.dur;
+    // 高さの動きのずれは、お手本の動きの大きさに対する割合で見る (平らに言うと低い点になるように)
+    var pShape = Math.max(0, 1 - shape / (0.45 * Math.max(M.range, 2))), pLen = Math.max(0, 1 - Math.abs(Math.log(ratio)) / Math.log(1.6)), pHeight = Math.max(0, 1 - Math.abs(offset) / 4);
+    return { shape: shape, offset: offset, durM: M.dur, durU: U.dur, rangeM: M.range, rangeU: U.range,
+      parts: { shape: pShape, len: pLen, height: pHeight }, score: Math.round(100 * (0.6 * pShape + 0.25 * pLen + 0.15 * pHeight)),
+      map: map, m: M, u: U };
+  }
+
+  var api = { framePitch: framePitch, makeJudge: makeJudge, streak: streak, compare: compare, LIMIT: LIMIT, _st: st };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.GameCore = api;
 })(typeof self !== 'undefined' ? self : this);
 
@@ -916,7 +983,7 @@ window.addEventListener('resize', function () { if (redraw && step === 'result')
 var micBlocked = false;
 try { localStorage.removeItem('koe-mic-blocked'); } catch (e) {}   // 以前の版が残した印を消す
 var MIC_MSG = {
-  denied: 'マイクが許可されていません。アドレス欄の左端のアイコンを押し、「権限」でマイクを許可してから、もう一度「録音を始める」を押してください。',
+  denied: 'マイクが許可されていません。スマホの「設定」→「アプリ」→ お使いのブラウザ →「権限」でマイクを許可します。次に、ブラウザの「設定」→「サイトの設定」→「マイク」で、このページがブロックされていないかを確かめます。そのあと、もう一度「録音を始める」を押してください。',
   none: 'マイクが見つかりませんでした。イヤホンなどを外して、もう一度「録音を始める」を押してください。',
   other: 'マイクを開始できませんでした。もう一度「録音を始める」を押してください。直らない場合は「録音済みの音声を選ぶ」を使えます。'
 };
@@ -995,6 +1062,7 @@ function trendRow(row, recs) {
 function renderLog() {
   var log = $('#view-log'); stopAudio();
   return store.all().then(function (list) {
+    list = list.filter(function (r) { return r.kind !== 'model'; });   // お手本の音声は記録に出さない
     log.textContent = '';
     var gs = Game.summary();
     if (!list.length && !gs.days.length) { log.appendChild(el('div', { cls: 'pad' }, [el('h2', { text: 'これまでの記録' }), el('p', { text: 'まだ記録がありません。「測定」や「練習」で録音すると、ここに数値の移り変わりと日ごとの録音が並びます。' })])); return; }
@@ -1067,9 +1135,14 @@ var Game = (function () {
   function build(n) {
     var mv = MOVES.slice(0, n >= 4 ? 3 : n >= 2 ? 2 : 1), m = mv[n % mv.length];
     var ps = PAIRS.filter(function (p) { return (p.from || 0) <= n; }), p = ps[n % ps.length], q4 = {}; for (var k in p) q4[k] = p[k];
-    return [
+    var warm = [
       { t: 'sustain', sec: 3, title: '楽にハミングする', say: '口を軽く閉じて、楽な高さで「んー」と3秒続けます。' },
-      { t: 'move', dir: m.dir, R: 3, title: '高さを動かす', say: m.say },
+      { t: 'move', dir: m.dir, R: 3, title: '高さを動かす', say: m.say }];
+    // お手本があるときは、後半の3問を「お手本に近づける」にする (短い言葉 → 中くらい → 長い文)
+    if (E.ready) return warm.concat([M_SHORT[n % M_SHORT.length], M_MID[n % M_MID.length], M_LONG[n % M_LONG.length]].map(function (t) { return { t: 'model', title: 'お手本に近づける', text: t, say: 'お手本を聞いてから、同じように言います。' }; }));
+    return [
+      warm[0],
+      warm[1],
       { t: 'ending', min: -12, title: '言葉を言い切る', text: WORDS[n % WORDS.length], say: '最後の音まで声に出して言います。', listen: true },
       q4,
       { t: 'talk', title: 'ひとこと話す', say: TALKS[n % TALKS.length] }
@@ -1159,9 +1232,10 @@ var Game = (function () {
     else if (rested) pad.appendChild(el('p', { style: 'margin-top:18px', text: '今日は休みとして記録しました。連続日数は途切れません。' }));
     pad.appendChild(el('div', { cls: 'row' }, [start]));
     pad.appendChild(el('p', { cls: 'msg', hidden: '', role: 'status' }));
+    modelBlock(pad);
     pad.appendChild(el('h3', { style: 'margin-top:26px', text: 'レッスン' + (S.n + 1) + 'の内容（5問・約2分）' }));
     var ol = el('ol', { cls: 'qlist' });
-    lesson.forEach(function (q, i) { ol.appendChild(el('li', {}, [el('span', { cls: 'num', text: String(i + 1) }), q.title])); });
+    lesson.forEach(function (q, i) { ol.appendChild(el('li', {}, [el('span', { cls: 'num', text: String(i + 1) }), q.t === 'model' ? q.title + '：' + q.text : q.title])); });
     pad.appendChild(ol);
     pad.appendChild(el('p', { cls: 'sub', style: 'margin-top:14px', text: '合否は、指示どおりに声を動かせたかどうかです。声の良し悪しを採点するものではありません。' }));
     if (!done && !rested) pad.appendChild(el('div', { cls: 'row' }, [act('喉の調子が悪いので、今日は休む', function () { S.rest.push(t); save(); home(); }, 'btn text')]));
@@ -1195,6 +1269,7 @@ var Game = (function () {
     if (q.text) wrap.appendChild(el('div', { cls: 'phrase', text: q.text }));
     if (qi === 0 && noisy) wrap.appendChild(el('p', { cls: 'sub', style: 'margin-top:10px', text: '周りの音が大きいようです。静かな場所のほうが、正しく判定できます。' }));
     if (q.t === 'talk') return talk(wrap, q, next);
+    if (q.t === 'model') return modelQ(wrap, q, next, last);
 
     var pitchTask = q.t === 'sustain' || q.t === 'move', lane = null, trail = null, dot = null, meterFill = null;
     if (pitchTask) {
@@ -1332,6 +1407,239 @@ var Game = (function () {
     document.body.classList.remove('in-lesson');
     box.appendChild(pad); window.scrollTo(0, 0);
   }
+  // ---- お手本 (ElevenLabsで作る、登録した自分の声による読み) ----
+  var E; try { E = JSON.parse(localStorage.getItem('koe-el')) || {}; } catch (e) { E = {}; }
+  function saveE() { try { localStorage.setItem('koe-el', JSON.stringify(E)); } catch (e) {} }
+  var API = 'https://api.elevenlabs.io', MODELS = ['eleven_v4', 'eleven_v3', 'eleven_multilingual_v2'], MIN_SEC = 30;
+  var PASSAGE_TEXT = LINES.map(function (l) { return l.t; }).join('');
+  var VOICE_TEXT = 'こんにちは。これから、私の声を登録します。今日は、最近の一日の過ごし方について話します。朝は七時ごろに起きて、まずお湯を沸かします。温かい飲み物を飲みながら、その日の予定を確かめるのが習慣です。午前中は、集中したい作業を先に片づけます。お昼は、できるだけ外に出て、少し歩くようにしています。午後は、連絡の返事を書いたり、資料をまとめたりして過ごします。夕方になったら、買い物をして帰ります。夜は、好きな音楽を聴きながら、ゆっくり夕食を作ります。休みの日は、少し遠くまで散歩に出かけます。季節によって、道ばたの花や空の色が変わるのを見るのが好きです。寝る前には、明日やることを三つだけ書き出します。以上で、録音を終わります。';
+  var M_SHORT = ['ありがとうございます', 'おつかれさまです', 'よろしくお願いします', 'そうなんですね', 'おはようございます'];
+  var M_MID = ['少しお時間よろしいですか', '今日はいい天気ですね', 'あとで確認して連絡します', '駅まで歩いて行きました'];
+  var M_LONG = LINES.reduce(function (a, l, i) { if (i % 2 === 0) a.push(l.t + LINES[i + 1].t); return a; }, []);
+
+  function api(path, opts) {
+    opts = opts || {}; opts.headers = opts.headers || {}; opts.headers['xi-api-key'] = E.key;
+    return fetch(API + path, opts).then(function (r) {
+      if (r.ok) return r;
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        var d = j && j.detail, msg = d ? (d.message || (d[0] && d[0].msg) || (typeof d === 'string' ? d : '')) : '';
+        var e = new Error(msg || ('状態コード ' + r.status)); e.status = r.status; throw e;
+      });
+    }, function () { var e = new Error('通信できませんでした。電波の状態を確かめてください。'); e.net = true; throw e; });
+  }
+  function errText(e) { return e.net ? e.message : 'ElevenLabsから次の返答がありました：' + e.message; }
+  function wavBlob(samples, fs) {
+    var step = fs >= 44100 ? 2 : 1, n = Math.floor(samples.length / step), rate = Math.round(fs / step), b = new DataView(new ArrayBuffer(44 + n * 2));
+    function w(o, s) { for (var i = 0; i < s.length; i++) b.setUint8(o + i, s.charCodeAt(i)); }
+    w(0, 'RIFF'); b.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+    b.setUint32(24, rate, true); b.setUint32(28, rate * 2, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); w(36, 'data'); b.setUint32(40, n * 2, true);
+    for (var i = 0; i < n; i++) { var v = 0; for (var k = 0; k < step; k++) v += samples[i * step + k]; v = Math.max(-1, Math.min(1, v / step)); b.setInt16(44 + i * 2, v * 32767, true); }
+    return new Blob([b], { type: 'audio/wav' });
+  }
+  function b64Blob(b64, type) { var s = atob(b64), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return new Blob([a], { type: type }); }
+  function modelKey(text) { return 'model-' + E.voiceId + '-' + text; }
+  function tts(text, i, seed) {
+    var model = E.model || MODELS[i], body = { text: text, model_id: model, voice_settings: { stability: 0.5 } };
+    if (model !== 'eleven_multilingual_v2') body.language_code = 'ja';
+    if (seed) body.seed = seed;
+    return api('/v1/text-to-speech/' + encodeURIComponent(E.voiceId) + '/with-timestamps?output_format=mp3_44100_128', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!E.model) { E.model = model; saveE(); } return j; },
+        function (err) { if (!E.model && !err.net && err.status !== 401 && i + 1 < MODELS.length) return tts(text, i + 1, seed); throw err; });   // 使えないモデルなら次を試す
+  }
+  // お手本を取り出す。なければ作って、この端末に保存する。fresh なら作り直す
+  function getModel(text, fresh) {
+    return store.all().then(function (list) {
+      var hit = list.filter(function (r) { return r.kind === 'model' && r.id === modelKey(text); })[0];
+      if (hit && !fresh) return hit;
+      return tts(text, 0, fresh ? 1 + Math.floor(Math.random() * 1e9) : 0).then(function (j) {
+        var blob = b64Blob(j.audio_base64, 'audio/mpeg');
+        return decode(blob).then(function (a) {
+          var tr = Koe.tracks(a.samples, a.fs), al = j.alignment || j.normalized_alignment || null;
+          var rec = { id: modelKey(text), time: 0, kind: 'model', text: text, blob: blob, m: {}, f0: Array.from(tr.f0), dur: a.duration,
+            align: al ? { ch: al.characters, st: al.character_start_times_seconds, en: al.character_end_times_seconds } : null };
+          return store.put(rec).then(function () { return rec; });
+        });
+      });
+    });
+  }
+  function screen(title) { closeMic(); stopAudio(); document.body.classList.add('in-lesson'); box.textContent = ''; var pad = el('div', { cls: 'lesson' }, [el('div', { cls: 'lbar' }, [act('練習の一覧に戻る', function () { home(); }, 'btn text')]), el('h2', { text: title })]); box.appendChild(pad); window.scrollTo(0, 0); return pad; }
+  function setup() { if (!E.key) setupKey(); else if (!E.voiceId) setupVoice(); else setupListen(false); }
+
+  function setupKey() {
+    var pad = screen('ElevenLabsのAPIキーを入れる');
+    pad.appendChild(el('p', { text: 'お手本は、ElevenLabsという音声サービスで作ります。ご自身のアカウントのAPIキーが必要です。' }));
+    var ol = el('ol', { cls: 'qlist', style: 'margin-top:14px' });
+    ['ElevenLabsにログインし、設定の「API Keys」で新しいキーを作ります。', '許可する機能は、音声の生成（Text to Speech）と声の登録（Voices）だけにします。使えるクレジットの上限も設定できます。', '作ったキーをコピーして、下の欄に貼り付けます。']
+      .forEach(function (t, i) { ol.appendChild(el('li', {}, [el('span', { cls: 'num', text: String(i + 1) }), el('span', { text: t })])); });
+    pad.appendChild(ol);
+    var input = el('input', { type: 'password', id: 'el-key', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', cls: 'field' });
+    pad.appendChild(el('label', { for: 'el-key', cls: 'flabel', text: 'APIキー' })); pad.appendChild(input);
+    var msg = el('p', { cls: 'msg', hidden: '', role: 'status' }); pad.appendChild(msg);
+    pad.appendChild(el('p', { cls: 'sub', style: 'margin-top:12px', text: 'キーは、この端末のこのブラウザにだけ保存します。送る先はElevenLabsだけです。声の登録（Instant Voice Cloning）は、ElevenLabsのプランによっては使えません。お手本を作るたびに、ElevenLabsのクレジットを使います。' }));
+    pad.appendChild(el('div', { cls: 'row' }, [act('キーを保存して、声の登録に進む', function () {
+      var v = input.value.trim();
+      if (v.length < 20) { msg.textContent = 'キーが短すぎます。ElevenLabsの画面からコピーしたキーを、そのまま貼り付けてください。'; msg.hidden = false; input.focus(); return; }
+      E.key = v; saveE(); setup();
+    }, 'btn wide')]));
+  }
+
+  function setupVoice() {
+    var pad = screen('自分の声を登録する');
+    pad.appendChild(el('p', { text: '次の文を、普段の話し方で読んで録音します。1分ほどかかります。静かな部屋で、口から20cmほど離して読みます。' }));
+    pad.appendChild(el('div', { cls: 'fig plain vtext', text: VOICE_TEXT }));
+    var stat = el('p', { cls: 'lstat', role: 'status', style: 'min-height:0' }), actions = el('div', { cls: 'row' }), msg = el('p', { cls: 'msg', hidden: '', role: 'status' });
+    pad.appendChild(stat); pad.appendChild(actions); pad.appendChild(msg);
+    function idle() {
+      actions.textContent = ''; stat.textContent = '';
+      actions.appendChild(act('録音を始める', startRec, 'btn wide'));
+      actions.appendChild(act('APIキーを入れ直す', function () { delete E.key; saveE(); setup(); }, 'btn text'));
+    }
+    function fail(text) { closeMic(); msg.textContent = text; msg.hidden = false; idle(); }
+    function startRec() {
+      msg.hidden = true; actions.textContent = '';
+      openMic().then(function () {
+        recStart(); var t0 = Date.now(), b = el('b', { cls: 'num' }); stat.textContent = ''; stat.appendChild(b);
+        var done = act('', finishRec, 'btn wide'); done.disabled = true; actions.appendChild(done);
+        var tick = setInterval(function () {
+          var s = (Date.now() - t0) / 1000; b.textContent = '録音中 ' + clock(s);
+          done.disabled = s < MIN_SEC; done.textContent = s < MIN_SEC ? 'あと' + Math.ceil(MIN_SEC - s) + '秒で、登録できる長さになります' : '録音を終えて、声を登録する';
+          if (s >= 150) finishRec();
+        }, 250);
+        function finishRec() {
+          clearInterval(tick); actions.textContent = ''; stat.textContent = ''; stat.appendChild(el('b', { text: '声を登録しています。' })); stat.appendChild(document.createTextNode('30秒ほどかかることがあります。'));
+          recStop().then(function (blob) { closeMic(); return decode(blob); }).then(function (a) {
+            var fd = new FormData(); fd.append('name', '声の記録（自分の声）'); fd.append('remove_background_noise', 'true'); fd.append('files', wavBlob(a.samples, a.fs), 'koe.wav');
+            return api('/v1/voices/add', { method: 'POST', body: fd });
+          }).then(function (r) { return r.json(); }).then(function (j) {
+            E.voiceId = j.voice_id; delete E.model; delete E.ready; saveE();
+            if (j.requires_verification) { fail('声は登録できましたが、ElevenLabs側で本人確認が必要です。ElevenLabsのサイトで、登録した声の確認を済ませてから、もう一度ここを開いてください。'); return; }
+            setupListen(false);
+          }).catch(function (e) { fail(e.status === undefined && !e.net ? '録音を読み込めませんでした。もう一度録音してください。' : errText(e)); });
+        }
+      }, function (err) { var nm = err && err.name; fail(nm === 'NotAllowedError' || nm === 'SecurityError' ? MIC_MSG.denied : MIC_MSG.none); });
+    }
+    idle();
+  }
+
+  function setupListen(fresh) {
+    var pad = screen('お手本を聞く');
+    var stat = el('p', { cls: 'lstat', role: 'status', style: 'min-height:0' }, [el('b', { text: '登録した声で、お手本を作っています。' })]), actions = el('div', { cls: 'row' });
+    pad.appendChild(el('div', { cls: 'fig plain vtext', style: 'font-size:17px', text: PASSAGE_TEXT })); pad.appendChild(stat); pad.appendChild(actions);
+    getModel(PASSAGE_TEXT, fresh).then(function (m) {
+      stat.textContent = ''; stat.appendChild(el('b', { text: 'お手本ができました。' })); stat.appendChild(document.createTextNode('登録した声で、上の文を読んだ音声です。聞いてみて、目標にしたい読み方かを確かめてください。'));
+      actions.appendChild(playButton('お手本', m.blob, ''));
+      actions.appendChild(act('このお手本で練習する', function () { E.ready = true; saveE(); home('お手本を設定しました。'); }, 'btn sec'));
+      actions.appendChild(act('別の読み方で作り直す', function () { setupListen(true); }, 'btn text'));
+    }, function (e) {
+      stat.textContent = ''; stat.appendChild(el('b', { text: 'お手本を作れませんでした。' })); stat.appendChild(document.createTextNode(errText(e)));
+      actions.appendChild(act('もう一度作る', function () { setupListen(fresh); }));
+      actions.appendChild(act('声を登録し直す', function () { delete E.voiceId; saveE(); setup(); }, 'btn sec'));
+      actions.appendChild(act('APIキーを入れ直す', function () { delete E.key; saveE(); setup(); }, 'btn text'));
+    });
+  }
+
+  // 一覧に出す、お手本の欄
+  function modelBlock(pad) {
+    pad.appendChild(el('h3', { style: 'margin-top:26px', text: 'お手本' }));
+    if (!E.ready) {
+      pad.appendChild(el('p', { style: 'margin-top:4px', text: '登録した自分の声で、整った読み方のお手本を作れます。練習は、お手本を聞いて同じように言い、近さを確かめる形になります。' }));
+      pad.appendChild(el('div', { cls: 'row' }, [act(E.key || E.voiceId ? 'お手本の準備を続ける' : 'お手本の準備を始める', setup, 'btn sec wide')]));
+      return;
+    }
+    var vals = Object.keys(S.best || {}).map(function (k) { return S.last[k]; }).filter(function (v) { return v !== undefined; });
+    pad.appendChild(el('p', { style: 'margin-top:4px', text: vals.length ? 'お手本との近さは、練習した' + vals.length + '個の言葉の平均で' + Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) + '％です。' : 'レッスンの後半で、お手本を聞いて同じように言う練習をします。' }));
+    var row = el('div', { cls: 'row' }); pad.appendChild(row);
+    getModel(PASSAGE_TEXT, false).then(function (m) { row.insertBefore(playButton('お手本', m.blob, 'sec'), row.firstChild); }, function () {});
+    row.appendChild(act('お手本を作り直す', function () { setup(); }, 'btn text'));
+  }
+
+  // お手本に近づける問題
+  function modelQ(wrap, q, next, last) {
+    var figure = el('div', { cls: 'lane', hidden: '' }), meterFill = el('i'), meter = el('div', { cls: 'meter', 'aria-hidden': 'true', hidden: '' }, [meterFill]);
+    var stat = el('p', { cls: 'lstat', role: 'status' }, [el('b', { text: 'お手本を用意しています。' })]), rows = el('div', { cls: 'rows', style: 'padding:0' }), actions = el('div', { cls: 'row' });
+    wrap.appendChild(figure); wrap.appendChild(meter); wrap.appendChild(stat); wrap.appendChild(rows); wrap.appendChild(actions);
+    var model = null, tries = 0;
+    function ready() {
+      actions.textContent = '';
+      actions.appendChild(act(tries ? 'もう一度言う' : '自分の声で言う', listen));
+      actions.appendChild(playButton('お手本', model.blob, 'sec'));
+    }
+    function listen() {
+      stopAudio(); actions.textContent = ''; rows.textContent = ''; meter.hidden = false; stat.textContent = ''; stat.appendChild(el('b', { text: '声を出してください。' })); stat.appendChild(document.createTextNode('言い終えると、自動で止まります。'));
+      var judge = GameCore.makeJudge({ t: 'ending', min: -99 }, null); recStart();
+      (function loop() {
+        var s = sample(), r = judge(s);
+        if (r.info.thr !== undefined) meterFill.style.width = Math.max(0, Math.min(100, (s.db - r.info.thr + 14) * 2.6)).toFixed(0) + '%';
+        if (r.state === 'run') { raf = requestAnimationFrame(loop); return; }
+        raf = 0; meter.hidden = true; meterFill.style.width = '0';
+        recStop().then(function (blob) {
+          if (r.state !== 'pass' || !blob) return unmeasured();
+          return decode(blob).then(function (a) { var c = GameCore.compare(model.f0, Koe.tracks(a.samples, a.fs).f0); if (!c) return unmeasured(); result(c, blob); }, unmeasured);
+        });
+      })();
+    }
+    function unmeasured() {
+      stat.textContent = ''; stat.appendChild(el('b', { text: '声をうまく測れませんでした。' })); stat.appendChild(document.createTextNode('マイクを口から20cmほどに近づけて、もう一度試せます。'));
+      ready(); actions.appendChild(act('この言葉を飛ばす', next, 'btn sec'));
+    }
+    function result(c, blob) {
+      tries++;
+      S.best = S.best || {}; S.last = S.last || {};
+      var prev = S.last[q.text]; S.last[q.text] = c.score; S.best[q.text] = Math.max(S.best[q.text] || 0, c.score); save();
+      if (c.score >= 70) chime();
+      stat.textContent = ''; stat.appendChild(el('b', { text: 'お手本との近さは' + c.score + '％です。' }));
+      stat.appendChild(document.createTextNode((prev !== undefined ? '前回は' + prev + '％でした。' : '') + hint(c)));
+      [['高さの動き', c.parts.shape], ['長さ', c.parts.len], ['全体の高さ', c.parts.height]].forEach(function (p) {
+        var rg = el('div', { cls: 'rg', 'aria-hidden': 'true' }, [el('s', { style: 'left:' + Math.round(p[1] * 100) + '%' })]);
+        rows.appendChild(el('div', { cls: 'r', style: 'min-height:44px' }, [el('h3', { text: p[0] }), rg, el('div', { cls: 'v num', style: 'font-size:20px' }, [Math.round(p[1] * 100) + '', el('small', { text: '％' })])]));
+      });
+      drawCompare(figure, model, c);
+      actions.textContent = '';
+      actions.appendChild(act(last ? 'レッスンを終える' : '次の言葉に進む', next, c.score >= 70 || tries >= 2 ? 'btn' : 'btn sec'));
+      actions.appendChild(act('もう一度言う', listen, c.score >= 70 || tries >= 2 ? 'btn sec' : 'btn'));
+      actions.appendChild(playButton('今の声', blob, 'sec')); actions.appendChild(playButton('お手本', model.blob, 'sec'));
+    }
+    function hint(c) {
+      var p = c.parts, low = Math.min(p.shape, p.len, p.height);
+      if (low > 0.85) return 'お手本にかなり近い言い方です。';
+      if (low === p.len) return (c.durU < c.durM ? 'お手本より速く言い終えています' : 'お手本よりゆっくりです') + '（お手本' + c.durM.toFixed(1) + '秒、今回' + c.durU.toFixed(1) + '秒）。';
+      if (low === p.height) return '全体の高さが、お手本より' + Math.abs(c.offset).toFixed(1) + '半音' + (c.offset > 0 ? '高め' : '低め') + 'です。';
+      if (c.rangeU < c.rangeM * 0.7) return '高さの上下が、お手本より小さめです。';
+      if (c.rangeU > c.rangeM * 1.4) return '高さの上下が、お手本より大きめです。';
+      return '高さが上がる所と下がる所の位置が、お手本とずれています。';
+    }
+    getModel(q.text, false).then(function (m) {
+      model = m; stat.textContent = ''; stat.appendChild(el('b', { text: 'お手本を聞いてから、同じように言います。' })); ready();
+    }, function (e) {
+      stat.textContent = ''; stat.appendChild(el('b', { text: 'お手本を作れませんでした。' })); stat.appendChild(document.createTextNode(errText(e)));
+      actions.appendChild(act('この言葉を飛ばす', next));
+    });
+  }
+  // お手本 (墨) と今回 (朱) の高さの動きを重ねる。下に、お手本がその文字を読んだ位置を出す
+  function drawCompare(host, model, c) {
+    host.textContent = ''; host.hidden = false;
+    var W = 350, H = 150, T = 12, B = 32, N = c.m.v.length, all = c.m.v.concat(c.u.v.map(function (v) { return v + c.offset; }));
+    var lo = Math.min.apply(null, all) - 1, hi = Math.max.apply(null, all) + 1;
+    var x = function (i) { return 10 + (W - 20) * i / (N - 1); }, y = function (v) { return T + (H - T - B) * (1 - (v - lo) / (hi - lo)); };
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'お手本と今回の、声の高さの動きを重ねた図' });
+    var dm = '', du = '';
+    c.m.v.forEach(function (v, i) { dm += (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); });
+    c.u.v.forEach(function (v, i) { du += (i ? 'L' : 'M') + x(c.map[i]).toFixed(1) + ' ' + y(v + c.offset).toFixed(1); });
+    svgEl('path', { d: dm, fill: 'none', stroke: '#17171B', 'stroke-width': 5, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+    svgEl('path', { d: du, fill: 'none', stroke: '#D3381C', 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+    if (model.align && model.align.ch) {
+      var t0 = c.m.start * 0.01, t1 = (c.m.end + 1) * 0.01, n = model.align.ch.length, size = Math.max(9, Math.min(15, (W - 20) / n * 0.95));
+      model.align.ch.forEach(function (ch, i) {
+        if (/[、。\s]/.test(ch)) return;
+        var mid = (model.align.st[i] + model.align.en[i]) / 2, f = (mid - t0) / (t1 - t0); if (f < -0.02 || f > 1.02) return;
+        var tx = svgEl('text', { x: (10 + (W - 20) * f).toFixed(1), y: H - 10, 'text-anchor': 'middle', 'font-size': size.toFixed(1), fill: '#66666C' }, svg); tx.textContent = ch;
+      });
+    }
+    host.appendChild(svg);
+    host.appendChild(el('div', { cls: 'legend', style: 'padding:0 10px 8px' }, [el('span', {}, [el('i', { style: 'border-top-color:#17171B' }), 'お手本']), el('span', {}, [el('i'), '今回'])]));
+  }
+
   function rateText(k) {
     var r = S.rate[k], out = [];
     if (S.rest.indexOf(k) >= 0) return '練習は休み';

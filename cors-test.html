@@ -1,9 +1,0 @@
-<!DOCTYPE html><meta charset="utf-8"><title>cors test</title><pre id="o">running</pre><script>
-(async()=>{const o=[];async function t(n,f){try{const r=await f();o.push(n+': status '+r.status+' '+(await r.text()).slice(0,80))}catch(e){o.push(n+': BLOCKED '+e)}}
-await t('GET models no key',()=>fetch('https://api.elevenlabs.io/v1/models'));
-await t('GET voices with xi-api-key header',()=>fetch('https://api.elevenlabs.io/v1/voices',{headers:{'xi-api-key':'invalid'}}));
-await t('POST tts json',()=>fetch('https://api.elevenlabs.io/v1/text-to-speech/x/with-timestamps',{method:'POST',headers:{'xi-api-key':'invalid','Content-Type':'application/json'},body:'{"text":"a"}'}));
-const fd=new FormData();fd.append('name','x');
-await t('POST voices/add multipart',()=>fetch('https://api.elevenlabs.io/v1/voices/add',{method:'POST',headers:{'xi-api-key':'invalid'},body:fd}));
-document.getElementById('o').textContent=o.join('\n')})();
-</script>
