@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>声の記録</title>
+<meta name="theme-color" content="#17171B">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600&family=Noto+Sans+JP:wght@400;500;700&family=Noto+Serif+JP:wght@500&display=swap" rel="stylesheet">
 <style>
@@ -455,7 +459,7 @@ body.in-lesson .top,body.in-lesson .nav,body.in-lesson .steps{display:none}
     var dec = Math.max(1, Math.round(fs / 12000)), n = Math.floor(buf.length / dec), x = new Float32Array(n), i, s = 0;
     for (i = 0; i < n; i++) { var a = 0; for (var k = 0; k < dec; k++) a += buf[i * dec + k]; x[i] = a / dec; s += x[i] * x[i]; }
     var f = fs / dec, db = 10 * Math.log10(s / n + 1e-12), out = { hz: 0, db: db, clarity: 0 };
-    if (db < -62) return out;
+    if (db < -75) return out;
     var minLag = Math.floor(f / 600), maxLag = Math.min(Math.ceil(f / 75), Math.floor(n / 2) - 2), win = n - maxLag - 1;
     if (win < 64) return out;
     var e0 = 0; for (i = 0; i < win; i++) e0 += x[i] * x[i];
@@ -492,7 +496,7 @@ body.in-lesson .top,body.in-lesson .nav,body.in-lesson .steps{display:none}
     function reset() { heard = false; fr = []; quiet = 0; start = null; last = null; gaps = []; voiced = 0; }
     var f = function (s, dt) {
       if (!heard) floor = floor === null ? s.db : Math.min(floor, s.db);
-      var thr = Math.max(floor + 12, -52), loud = s.db > thr;
+      var thr = Math.max(floor + 12, -62), loud = s.db > thr;
       f.level = s.db; f.thr = thr; f.heard = heard;
       if (loud) {
         if (start === null) start = s.t;
@@ -992,7 +996,9 @@ function renderLog() {
   var log = $('#view-log'); stopAudio();
   return store.all().then(function (list) {
     log.textContent = '';
-    if (!list.length) { log.appendChild(el('div', { cls: 'pad' }, [el('h2', { text: 'これまでの記録' }), el('p', { text: 'まだ記録がありません。「測定」や「練習」で録音すると、ここに数値の移り変わりと日ごとの録音が並びます。' })])); return; }
+    var gs = Game.summary();
+    if (!list.length && !gs.days.length) { log.appendChild(el('div', { cls: 'pad' }, [el('h2', { text: 'これまでの記録' }), el('p', { text: 'まだ記録がありません。「測定」や「練習」で録音すると、ここに数値の移り変わりと日ごとの録音が並びます。' })])); return; }
+    log.appendChild(el('div', { cls: 'pad', style: 'padding-bottom:0' }, [el('h2', { text: '練習の記録' }), el('p', { text: '終えたレッスンは' + gs.n + '回、連続は' + gs.streak + '日です。' })]));
     var kinds = ['read', 'talk'].filter(function (k) { return list.some(function (r) { return r.kind === k; }); });
     if (kinds.indexOf(logKind) < 0) logKind = kinds[0];
     if (kinds.length) {
@@ -1013,8 +1019,10 @@ function renderLog() {
     log.appendChild(el('div', { cls: 'secthead' }, [el('h2', { text: '日ごとの録音' })]));
     var days = {}, wrap = el('div', { cls: 'rows' });
     list.forEach(function (r) { var k = dayKey(r.time); (days[k] = days[k] || []).push(r); });
+    gs.days.forEach(function (k) { days[k] = days[k] || []; });
     Object.keys(days).sort().reverse().forEach(function (k) {
-      var d = el('div', { cls: 'day' }, [el('h3', { text: dayLabel(k) })]), btns = el('div', { cls: 'row' });
+      var d = el('div', { cls: 'day' }, [el('h3', { text: dayLabel(k) })]), btns = el('div', { cls: 'row' }), rt = Game.rateText(k);
+      if (rt) d.appendChild(el('p', { cls: 'sub', style: 'margin:-6px 0 10px', text: rt }));
       ['read', 'talk', 'say'].forEach(function (kind) {
         var rs = days[k].filter(function (r) { return r.kind === kind; }).sort(function (a, b) { return b.time - a.time; });
         if (rs.length && rs[0].blob) btns.appendChild(playButton(KIND_NAME[kind], rs[0].blob, 'sec'));
@@ -1024,7 +1032,8 @@ function renderLog() {
       var yes = act('削除する', function () { store.del(ids).then(function () { store.all().then(markSteps); renderLog(); }); }, 'btn stop');
       var no = act('削除しない', function () { conf.hidden = true; del.hidden = false; del.focus(); }, 'btn sec');
       var conf = el('div', { cls: 'confirm', hidden: '' }, [el('p', { text: dayLabel(k) + 'の記録と録音を削除します。元に戻せません。' }), el('div', { cls: 'row', style: 'margin-top:10px' }, [yes, no])]);
-      btns.appendChild(del); d.appendChild(btns); d.appendChild(conf); wrap.appendChild(d);
+      if (ids.length) btns.appendChild(del);
+      d.appendChild(btns); d.appendChild(conf); wrap.appendChild(d);
     });
     log.appendChild(wrap);
     log.appendChild(el('p', { cls: 'sub', style: 'padding:16px 20px 28px', text: '記録はこの端末のこのブラウザに保存されます。別の端末からは見られません。ブラウザのデータを消すと、記録も消えます。' }));
@@ -1074,12 +1083,22 @@ var Game = (function () {
   }
 
   // ---- マイク ----
-  var ctx = null, analyser = null, stream = null, buf = null, raf = 0, rec = null, chunks = [];
+  var ctx = null, analyser = null, stream = null, buf = null, raf = 0, rec = null, chunks = [], ambient = -90, noisy = false;
   function openMic() {
     return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function (s) {
       stream = s; var AC = window.AudioContext || window.webkitAudioContext; ctx = new AC();
       analyser = ctx.createAnalyser(); analyser.fftSize = 2048; ctx.createMediaStreamSource(s).connect(analyser); buf = new Float32Array(2048);
       return ctx.resume ? ctx.resume() : null;
+    }).then(function () {
+      // 始めの0.6秒で周りの音の大きさを測る。空調などの低い音を声と取り違えないため
+      return new Promise(function (res) {
+        var lv = [], t0 = performance.now();
+        (function tick() {
+          analyser.getFloatTimeDomainData(buf); lv.push(GameCore.framePitch(buf, ctx.sampleRate).db);
+          if (performance.now() - t0 < 600) requestAnimationFrame(tick);
+          else { lv.sort(function (a, b) { return a - b; }); var p10 = lv[Math.floor(lv.length * 0.1)]; noisy = p10 > -38; ambient = Math.min(p10, -50); res(); }   // 測っている間に声を出していても締め出さないよう、上限を置く
+        })();
+      });
     });
   }
   function closeMic() {
@@ -1089,7 +1108,12 @@ var Game = (function () {
     if (ctx) { try { ctx.close(); } catch (e) {} }
     ctx = analyser = stream = rec = null;
   }
-  function sample() { analyser.getFloatTimeDomainData(buf); var r = GameCore.framePitch(buf, ctx.sampleRate); return { t: ctx.currentTime, hz: r.hz, db: r.db }; }
+  function sample() {
+    analyser.getFloatTimeDomainData(buf); var r = GameCore.framePitch(buf, ctx.sampleRate);
+    // 周りの音の大きさは、静かな瞬間に合わせて下げ、声のない間だけ少しずつ上げる
+    if (r.db < ambient) ambient = r.db; else if (!r.hz) ambient = Math.min(r.db, ambient + 0.008);
+    return { t: ctx.currentTime, hz: r.db > ambient + 8 ? r.hz : 0, db: r.db };
+  }
   function recStart() { chunks = []; try { rec = new MediaRecorder(stream); rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); }; rec.start(); } catch (e) { rec = null; } }
   function recStop() {
     return new Promise(function (res) {
@@ -1169,6 +1193,7 @@ var Game = (function () {
     wrap.appendChild(el('h2', { text: q.title }));
     var say = el('p', { cls: 'say', text: q.say || q.a }); wrap.appendChild(say);
     if (q.text) wrap.appendChild(el('div', { cls: 'phrase', text: q.text }));
+    if (qi === 0 && noisy) wrap.appendChild(el('p', { cls: 'sub', style: 'margin-top:10px', text: '周りの音が大きいようです。静かな場所のほうが、正しく判定できます。' }));
     if (q.t === 'talk') return talk(wrap, q, next);
 
     var pitchTask = q.t === 'sustain' || q.t === 'move', lane = null, trail = null, dot = null, meterFill = null;
@@ -1307,7 +1332,16 @@ var Game = (function () {
     document.body.classList.remove('in-lesson');
     box.appendChild(pad); window.scrollTo(0, 0);
   }
-  return { home: home, stop: function () { if (document.body.classList.contains('in-lesson')) home(); else closeMic(); } };
+  function rateText(k) {
+    var r = S.rate[k], out = [];
+    if (S.rest.indexOf(k) >= 0) return '練習は休み';
+    if (S.days.indexOf(k) < 0) return '';
+    if (r && r.like !== undefined) out.push('声は「' + ['好き', 'ふつう', '好きではない'][r.like] + '」');
+    if (r && r.ease !== undefined) out.push(['無理なく出せた', '少し力が入った', '喉がつらい'][r.ease]);
+    return '練習した' + (out.length ? '（' + out.join('、') + '）' : '');
+  }
+  function summary() { return { n: S.n, streak: GameCore.streak(S.days.concat(S.rest), today()), days: S.days.concat(S.rest) }; }
+  return { rateText: rateText, summary: summary, home: home, stop: function () { if (document.body.classList.contains('in-lesson')) home(); else closeMic(); } };
 })();
 
 
